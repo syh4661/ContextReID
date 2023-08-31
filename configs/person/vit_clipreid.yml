@@ -80,8 +80,8 @@ DATASETS:
 #   ROOT_DIR: ('')
 # OUTPUT_DIR: ''
 
-#   NAMES: ('msmt17')
-#   ROOT_DIR: ('')
-# OUTPUT_DIR: ''
+  NAMES: ('msmt17')
+  ROOT_DIR: ('/media/syh/ssd2/data/ReID')
+OUTPUT_DIR: '/media/syh/hdd/checkpoints/CLIP_ReID_KETI'
 
 # CUDA_VISIBLE_DEVICES=3 python train_clipreid.py --config_file configs/person/vit_clipreid.yml
