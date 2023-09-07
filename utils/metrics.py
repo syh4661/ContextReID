@@ -44,6 +44,14 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
     all_cmc = []
     all_AP = []
     num_valid_q = 0.  # number of valid query
+    if 0:
+        falser=[]
+        falsee=[]
+        falsee2=[]
+        falsee3=[]
+        falsse4=[]
+        falsee5=[]
+        cmc_keep=[]
     for q_idx in range(num_q):
         # get query pid and camid
         q_pid = q_pids[q_idx]
@@ -63,7 +71,13 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
 
         cmc = orig_cmc.cumsum()
         cmc[cmc > 1] = 1
-
+        if cmc[0] != 1:
+            falser.append(q_idx)
+            falsee.append(order[keep][0])
+            falsee2.append(order[keep][1])
+            falsee3.append(order[keep][2])
+            falsse4.append(order[keep][3])
+            falsee5.append(order[keep][4])
         all_cmc.append(cmc[:max_rank])
         num_valid_q += 1.
 
@@ -77,8 +91,23 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
         tmp_cmc = np.asarray(tmp_cmc) * orig_cmc
         AP = tmp_cmc.sum() / num_rel
         all_AP.append(AP)
-
+    if 0:
+        with open("clipreid_msmt_falser.txt", "w") as file:
+            for i in range(len(falser)):
+                file.write(str(falser[i]) + "," + str(falsee[i])+ "," + str(falsee2[i])+ "," + str(falsee3[i])+ "," + str(falsee4[i])+ "," + str(falsee5[i]) + "\n")
     assert num_valid_q > 0, "Error: all query identities do not appear in gallery"
+    if 0:
+        with open("cmc_keep.txt", "w") as file:
+            for row in cmc_keep:
+                # Convert each row to a string of comma-separated values and add a newline character
+                line = ",".join(map(str, row)) + "\n"
+                file.write(line)
+
+        with open("clipred_msmt_falser.txt", "w") as file:
+            for i in range(len(falser)):
+                file.write(
+                    str(falser[i]) + "," + str(falsee[i]) + "," + str(falsee2[i]) + "," + str(falsee3[i]) + "," + str(
+                        falsee4[i]) + "," + str(falsee5[i]) + "\n")
 
     all_cmc = np.asarray(all_cmc).astype(np.float32)
     all_cmc = all_cmc.sum(0) / num_valid_q
