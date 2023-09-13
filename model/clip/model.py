@@ -225,7 +225,7 @@ class VisionTransformer(nn.Module):
         x = x + self.positional_embedding.to(x.dtype)
         x = self.ln_pre(x)
         
-        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = x.permute(1, 0, 2)  # NLD -> LND # grid**2+1 , batch , width
         
         x11 = self.transformer.resblocks[:11](x) 
         x12 = self.transformer.resblocks[11](x11) 

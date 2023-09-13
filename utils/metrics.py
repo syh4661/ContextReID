@@ -2,7 +2,7 @@ import torch
 import numpy as np
 import os
 from utils.reranking import re_ranking
-
+from scipy.spatial import distance
 
 def euclidean_distance(qf, gf):
     m = qf.shape[0]
@@ -10,8 +10,11 @@ def euclidean_distance(qf, gf):
     dist_mat = torch.pow(qf, 2).sum(dim=1, keepdim=True).expand(m, n) + \
                torch.pow(gf, 2).sum(dim=1, keepdim=True).expand(n, m).t()
     dist_mat.addmm_(1, -2, qf, gf.t())
+    print("here")
     return dist_mat.cpu().numpy()
-
+def scipy_euclidean_distance(qf, gf):
+    dist = distance.cdist(qf,gf, metric='euclidean')
+    return dist_mat.cpu().numpy()
 def cosine_similarity(qf, gf):
     epsilon = 0.00001
     dist_mat = qf.mm(gf.t())
@@ -39,19 +42,24 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
     indices = np.argsort(distmat, axis=1)
     #  0 2 1 3
     #  1 2 3 0
-    matches = (g_pids[indices] == q_pids[:, np.newaxis]).astype(np.int32)
+    matches = (g_pids[indices] == q_pids[:, np.newaxis]).astype(np.int8)
     # compute cmc curve for each query
     all_cmc = []
     all_AP = []
     num_valid_q = 0.  # number of valid query
-    if 0:
+
+    CHECK_FALSE = True
+
+    if CHECK_FALSE:
         falser=[]
         falsee=[]
         falsee2=[]
         falsee3=[]
-        falsse4=[]
+        falsee4=[]
         falsee5=[]
         cmc_keep=[]
+        score_keep=[]
+        succ_score_keep=[]
     for q_idx in range(num_q):
         # get query pid and camid
         q_pid = q_pids[q_idx]
@@ -68,16 +76,19 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
         if not np.any(orig_cmc):
             # this condition is true when query identity does not appear in gallery
             continue
-
         cmc = orig_cmc.cumsum()
         cmc[cmc > 1] = 1
-        if cmc[0] != 1:
+        if cmc[0] != 1 and CHECK_FALSE:
             falser.append(q_idx)
             falsee.append(order[keep][0])
             falsee2.append(order[keep][1])
             falsee3.append(order[keep][2])
-            falsse4.append(order[keep][3])
+            falsee4.append(order[keep][3])
             falsee5.append(order[keep][4])
+            cmc_keep.append(orig_cmc[:5])
+            score_keep.append(distmat[q_idx][order[keep][:5]])
+        if cmc[0] == 1 and CHECK_FALSE:
+            succ_score_keep.append(distmat[q_idx][order[keep][:5]])
         all_cmc.append(cmc[:max_rank])
         num_valid_q += 1.
 
@@ -91,19 +102,25 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
         tmp_cmc = np.asarray(tmp_cmc) * orig_cmc
         AP = tmp_cmc.sum() / num_rel
         all_AP.append(AP)
-    if 0:
-        with open("clipreid_msmt_falser.txt", "w") as file:
-            for i in range(len(falser)):
-                file.write(str(falser[i]) + "," + str(falsee[i])+ "," + str(falsee2[i])+ "," + str(falsee3[i])+ "," + str(falsee4[i])+ "," + str(falsee5[i]) + "\n")
+
     assert num_valid_q > 0, "Error: all query identities do not appear in gallery"
-    if 0:
+    if CHECK_FALSE:
         with open("cmc_keep.txt", "w") as file:
             for row in cmc_keep:
                 # Convert each row to a string of comma-separated values and add a newline character
                 line = ",".join(map(str, row)) + "\n"
                 file.write(line)
-
-        with open("clipred_msmt_falser.txt", "w") as file:
+        with open("fail_score_keep.txt", "w") as file:
+            for row in score_keep:
+                # Convert each row to a string of comma-separated values and add a newline character
+                line = ",".join(map("{:.8f}".format, row)) + "\n"
+                file.write(line)
+        with open("succ_score_keep.txt", "w") as file:
+            for row in succ_score_keep:
+                # Convert each row to a string of comma-separated values and add a newline character
+                line = ",".join(map("{:.8f}".format, row)) + "\n"
+                file.write(line)
+        with open("clipreid_msmt_falser.txt", "w") as file:
             for i in range(len(falser)):
                 file.write(
                     str(falser[i]) + "," + str(falsee[i]) + "," + str(falsee2[i]) + "," + str(falsee3[i]) + "," + str(
@@ -131,12 +148,15 @@ class R1_mAP_eval():
 
     def update(self, output):  # called once for each batch
         feat, pid, camid = output
-        self.feats.append(feat.cpu())
+        # self.feats.append(feat.cpu())
         self.pids.extend(np.asarray(pid))
         self.camids.extend(np.asarray(camid))
 
     def compute(self):  # called after each epoch
-        feats = torch.cat(self.feats, dim=0)
+        # feats = torch.cat(self.feats, dim=0)
+        feats = torch.load("feats.pt")
+        # torch.save(feats,"feats.pt")
+        # raise KeyboardInterrupt
         if self.feat_norm:
             print("The test feature is normalized")
             feats = torch.nn.functional.normalize(feats, dim=1, p=2)  # along channel

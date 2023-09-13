@@ -151,7 +151,7 @@ class build_transformer(nn.Module):
                 return torch.cat([feat, feat_proj], dim=1)
             else:
                 return torch.cat([img_feature, img_feature_proj], dim=1)
-
+                # return self.classifier(feat)
 
     def load_param(self, trained_path):
         param_dict = torch.load(trained_path)

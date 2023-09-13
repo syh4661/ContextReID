@@ -9,6 +9,98 @@ from torch.cuda import amp
 import torch.distributed as dist
 from torch.nn import functional as F
 from loss.supcontrast import SupConLoss
+from PIL import Image, ImageFile
+import numpy as np
+import cv2
+
+import matplotlib.pyplot as plt
+
+
+from pytorch_grad_cam import GradCAM, \
+    ScoreCAM, \
+    GradCAMPlusPlus, \
+    AblationCAM, \
+    XGradCAM, \
+    EigenCAM, \
+    EigenGradCAM, \
+    LayerCAM, \
+    FullGrad
+from pytorch_grad_cam.utils.image import show_cam_on_image, \
+    preprocess_image
+from pytorch_grad_cam.ablation_layer import AblationLayerVit
+
+from utils.visualization.baselines.ViT.ViT_explanation_generator import LRP
+
+
+def generate_visualization(original_image, attribution_generator,class_index=None):
+    transformer_attribution = attribution_generator.generate_LRP(original_image.cuda(),
+                                                                 method="transformer_attribution",
+                                                                 index=class_index).detach()
+    transformer_attribution = transformer_attribution.reshape(1, 1, 16, 8)
+    transformer_attribution = torch.nn.functional.interpolate(transformer_attribution, scale_factor=16, mode='bilinear')
+    transformer_attribution = transformer_attribution.reshape(256, 128).data.cpu().numpy()
+    transformer_attribution = (transformer_attribution - transformer_attribution.min()) / (
+                transformer_attribution.max() - transformer_attribution.min())
+
+    if use_thresholding:
+        transformer_attribution = transformer_attribution * 255
+        transformer_attribution = transformer_attribution.astype(np.uint8)
+        ret, transformer_attribution = cv2.threshold(transformer_attribution, 0, 255,
+                                                     cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        transformer_attribution[transformer_attribution == 255] = 1
+
+    image_transformer_attribution = original_image.permute(1, 2, 0).data.cpu().numpy()
+    image_transformer_attribution = (image_transformer_attribution - image_transformer_attribution.min()) / (
+                image_transformer_attribution.max() - image_transformer_attribution.min())
+    vis = show_cam_on_image(image_transformer_attribution, transformer_attribution)
+    vis = np.uint8(255 * vis)
+    vis = cv2.cvtColor(np.array(vis), cv2.COLOR_RGB2BGR)
+    return vis
+
+
+def print_top_classes(predictions, **kwargs):
+    # Print Top-5 predictions
+    prob = torch.softmax(predictions, dim=1)
+    class_indices = predictions.data.topk(5, dim=1)[1][0].tolist()
+    max_str_len = 0
+    class_names = []
+    for cls_idx in class_indices:
+        class_names.append(CLS2IDX[cls_idx])
+        if len(CLS2IDX[cls_idx]) > max_str_len:
+            max_str_len = len(CLS2IDX[cls_idx])
+
+    print('Top 5 classes:')
+    for cls_idx in class_indices:
+        output_string = '\t{} : {}'.format(cls_idx, CLS2IDX[cls_idx])
+        output_string += ' ' * (max_str_len - len(CLS2IDX[cls_idx])) + '\t\t'
+        output_string += 'value = {:.3f}\t prob = {:.1f}%'.format(predictions[0, cls_idx], 100 * prob[0, cls_idx])
+        print(output_string)
+#
+# def reshape_transform(tensor, height=14, width=14):
+#     result = tensor[:, 1:, :].reshape(tensor.size(0),
+#                                       height, width, tensor.size(2))
+#
+#     # Bring the channels to the first dimension,
+#     # like in CNNs.
+#     result = result.transpose(2, 3).transpose(1, 2)
+#     return result
+
+def reshape_transform(tensor, height=16, width=8):
+    # print(tensor.max())
+    # print(tensor.shape)# 129 64 768
+    result = tensor[1:, :, :].reshape(tensor.size(1),
+                                      height, width, tensor.size(2))
+    # result = tensor[:, 1:, :].reshape(tensor.size(0),
+    #                                   width, height, tensor.size(2))
+
+    # 64 * 8 * 16 * 768
+    # Bring the channels to the first dimension,
+    # like in CNNs.
+    # result = result.transpose(2, 3).transpose(1, 2).transpose(2,3)
+    result = result.transpose(2, 3).transpose(1, 2)#.transpose(2,3)
+    # 64 * 768 * 8 * 16
+
+    return result
 
 def do_train_stage2(cfg,
              model,
@@ -190,12 +282,15 @@ def do_inference(cfg,
                  model,
                  val_loader,
                  num_query):
+
+    GRAD_CAM=False
+    TRANS_INTPRET=False
+
     device = "cuda"
     logger = logging.getLogger("transreid.test")
     logger.info("Enter inferencing")
 
     evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
-
     evaluator.reset()
 
     if device:
@@ -204,11 +299,48 @@ def do_inference(cfg,
             model = nn.DataParallel(model)
         model.to(device)
 
-    model.eval()
+    # model.eval()
     img_path_list = []
+    if TRANS_INTPRET:
+        attribution_generator = LRP(model)
+    if GRAD_CAM:
+        gradcam_methods = \
+            {"gradcam": GradCAM,
+             "scorecam": ScoreCAM,
+             "gradcam++": GradCAMPlusPlus,
+             "ablationcam": AblationCAM,
+             "xgradcam": XGradCAM,
+             "eigencam": EigenCAM,
+             "eigengradcam": EigenGradCAM,
+             "layercam": LayerCAM,
+             "fullgrad": FullGrad}
+
+    # target_layers = [model.blocks[-1].norm1]
+    # torch.cat([img_feature, img_feature_proj], dim=1)
+        target_layers = [model.image_encoder.transformer.resblocks[9].ln_1,model.image_encoder.transformer.resblocks[10].ln_1,model.image_encoder.transformer.resblocks[11].ln_1]
+        # target_layers = [model.image_encoder.transformer.resblocks[10].mlp]
+        # target_layers = [model.image_encoder.ln_post]
+        # target_layers = [model.image_encoder]
+        cam = gradcam_methods['gradcam++'](model=model,
+                                   target_layers=target_layers,
+                                   use_cuda=True,
+                                   reshape_transform=reshape_transform)
+        cam.batch_size = cfg.TEST.IMS_PER_BATCH
+
+
+    class EmptyContext:
+        def __enter__(self):
+            pass
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            pass
+
+    from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+
 
     for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
         with torch.no_grad():
+        # with EmptyContext():
             img = img.to(device)
             if cfg.MODEL.SIE_CAMERA:
                 camids = camids.to(device)
@@ -218,9 +350,42 @@ def do_inference(cfg,
                 target_view = target_view.to(device)
             else: 
                 target_view = None
+            #feat = model(img, cam_label=camids, view_label=target_view)
             feat = model(img, cam_label=camids, view_label=target_view)
+            if TRANS_INTPRET:
+                cat = generate_visualization(img,attribution_generator)
+                fig, axs = plt.subplots(1, 2)
+                axs[0].imshow(img)
+                axs[0].axis('off')
+
+                axs[1].imshow(cat)
+                axs[1].axis('off')
             evaluator.update((feat, pid, camid))
-            img_path_list.extend(imgpath)
+            # img_path_list.extend(imgpath)
+            if GRAD_CAM:
+                targets_cam =None
+                # if cfg.DATASETS.NAMES == 'msmt17':
+                #     targets_cam = [ClassifierOutputTarget(int(imgpath[i][:4])) for i in range(cfg.TEST.IMS_PER_BATCH)]
+                # else:
+                #     targets_cam = [ClassifierOutputTarget(tar_) for tar_ in
+                #                    torch.argmax(model.classifier(feat[:, :768]), dim=1)]
+                grayscale_cam = cam(input_tensor=img,
+                                    targets=targets_cam,
+                                    eigen_smooth=False,
+                                    aug_smooth=False)
+                for i in range(len(imgpath)):
+                    grayscale_cam_ = grayscale_cam[i, :]
+                    # rgb_img = Image.open().convert('RGB')
+                    if cfg.DATASETS.NAMES=='msmt17':
+                        rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]), 1)[:, :,::-1]
+                    else:
+                        rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MUF_KETI/bounding_box_train",imgpath[i]), 1)[:, :, ::-1]
+                    rgb_img = cv2.resize(rgb_img, (128, 256))
+                    rgb_img = np.float32(rgb_img) / 255
+
+                    cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
+                    save_name = imgpath[i].split('.')[0]+'_grad'+'.jpg'
+                    cv2.imwrite(os.path.join('/media/syh/ssd2/data/ReID/MSMT17/query_ClipReID_output_grad',save_name), cam_image)
 
 
     cmc, mAP, _, _, _, _, _ = evaluator.compute()
