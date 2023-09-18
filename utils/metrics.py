@@ -49,7 +49,7 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
     num_valid_q = 0.  # number of valid query
 
     CHECK_FALSE = True
-
+    CHECK_TRUE = True
     if CHECK_FALSE:
         falser=[]
         falsee=[]
@@ -60,6 +60,18 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
         cmc_keep=[]
         score_keep=[]
         succ_score_keep=[]
+    if CHECK_TRUE :
+        truer=[]
+        truee=[]
+        truee2=[]
+        truee3=[]
+        truee4=[]
+        truee5=[]
+
+        true_cmc_keep=[]
+        true_score_keep=[]
+        succ_score_keep=[]
+
     for q_idx in range(num_q):
         # get query pid and camid
         q_pid = q_pids[q_idx]
@@ -87,8 +99,21 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
             falsee5.append(order[keep][4])
             cmc_keep.append(orig_cmc[:5])
             score_keep.append(distmat[q_idx][order[keep][:5]])
+
+        # 230918 true test
+        elif cmc[0]==1 and CHECK_TRUE:
+            truer.append(q_idx)
+            truee.append(order[keep][0])
+            truee2.append(order[keep][1])
+            truee3.append(order[keep][2])
+            truee4.append(order[keep][3])
+            truee5.append(order[keep][4])
+            true_cmc_keep.append(orig_cmc[:5])
+            true_score_keep.append(distmat[q_idx][order[keep][:5]])
+
         if cmc[0] == 1 and CHECK_FALSE:
             succ_score_keep.append(distmat[q_idx][order[keep][:5]])
+
         all_cmc.append(cmc[:max_rank])
         num_valid_q += 1.
 
@@ -105,26 +130,47 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
 
     assert num_valid_q > 0, "Error: all query identities do not appear in gallery"
     if CHECK_FALSE:
-        with open("cmc_keep.txt", "w") as file:
+        with open("utils/checks/cmc_keep.txt", "w") as file:
             for row in cmc_keep:
                 # Convert each row to a string of comma-separated values and add a newline character
                 line = ",".join(map(str, row)) + "\n"
                 file.write(line)
-        with open("fail_score_keep.txt", "w") as file:
+        with open("utils/checks/fail_score_keep.txt", "w") as file:
             for row in score_keep:
                 # Convert each row to a string of comma-separated values and add a newline character
                 line = ",".join(map("{:.8f}".format, row)) + "\n"
                 file.write(line)
-        with open("succ_score_keep.txt", "w") as file:
+        with open("utils/checks/succ_score_keep.txt", "w") as file:
             for row in succ_score_keep:
                 # Convert each row to a string of comma-separated values and add a newline character
                 line = ",".join(map("{:.8f}".format, row)) + "\n"
                 file.write(line)
-        with open("clipreid_msmt_falser.txt", "w") as file:
+        with open("utils/checks/clipreid_msmt_falser.txt", "w") as file:
             for i in range(len(falser)):
                 file.write(
                     str(falser[i]) + "," + str(falsee[i]) + "," + str(falsee2[i]) + "," + str(falsee3[i]) + "," + str(
                         falsee4[i]) + "," + str(falsee5[i]) + "\n")
+    if CHECK_TRUE:
+        with open("utils/checks/true_cmc_keep.txt", "w") as file:
+            for row in true_cmc_keep:
+                # Convert each row to a string of comma-separated values and add a newline character
+                line = ",".join(map(str, row)) + "\n"
+                file.write(line)
+        with open("utils/checks/true_score_keep.txt", "w") as file:
+            for row in true_score_keep:
+                # Convert each row to a string of comma-separated values and add a newline character
+                line = ",".join(map("{:.8f}".format, row)) + "\n"
+                file.write(line)
+        with open("utils/checks/succ_score_keep.txt", "w") as file:
+            for row in succ_score_keep:
+                # Convert each row to a string of comma-separated values and add a newline character
+                line = ",".join(map("{:.8f}".format, row)) + "\n"
+                file.write(line)
+        with open("utils/checks/clipreid_msmt_truer.txt", "w") as file:
+            for i in range(len(truer)):
+                file.write(
+                    str(truer[i]) + "," + str(truee[i]) + "," + str(truee2[i]) + "," + str(truee3[i]) + "," + str(
+                        truee4[i]) + "," + str(truee5[i]) + "\n")
 
     all_cmc = np.asarray(all_cmc).astype(np.float32)
     all_cmc = all_cmc.sum(0) / num_valid_q
