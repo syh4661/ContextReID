@@ -97,7 +97,12 @@ def make_dataloader(cfg):
     else:
         print('unsupported sampler! expected softmax or triplet but got {}'.format(cfg.SAMPLER))
 
-    val_set = ImageDataset(dataset.query + dataset.gallery, val_transforms)
+    # val_set = ImageDataset(dataset.query + dataset.gallery, val_transforms)
+    #val_loader = DataLoader(
+    #    val_set, batch_size=cfg.TEST.IMS_PER_BATCH, shuffle=False, num_workers=num_workers,
+    #    collate_fn=val_collate_fn
+    # todo 230921 train inquery
+    val_set = ImageDataset(dataset.train, val_transforms)
 
     val_loader = DataLoader(
         val_set, batch_size=cfg.TEST.IMS_PER_BATCH, shuffle=False, num_workers=num_workers,
@@ -107,4 +112,6 @@ def make_dataloader(cfg):
         train_set_normal, batch_size=cfg.SOLVER.STAGE1.IMS_PER_BATCH, shuffle=True, num_workers=num_workers,
         collate_fn=train_collate_fn
     )
-    return train_loader_stage2, train_loader_stage1, val_loader, len(dataset.query), num_classes, cam_num, view_num
+    # todo 230921 train inquery
+    # return train_loader_stage2, train_loader_stage1, val_loader, len(dataset.query), num_classes, cam_num, view_num
+    return train_loader_stage2, train_loader_stage1, val_loader, len(dataset.train)//8, num_classes, cam_num, view_num

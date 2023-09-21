@@ -6,6 +6,7 @@ import argparse
 import cv2
 import numpy as np
 import torch
+import os 
 
 from pytorch_grad_cam import GradCAM, \
     ScoreCAM, \
@@ -30,7 +31,7 @@ def get_args():
     parser.add_argument(
         '--image-path',
         type=str,
-        default='./image/0012_5_0_0008_06089427.jpg',
+        default='./image',
         help='Input image path')
     parser.add_argument('--aug_smooth', action='store_true',
                         help='Apply test time augmentation to smooth the CAM')
@@ -110,28 +111,30 @@ if __name__ == '__main__':
                                    target_layers=target_layers,
                                    use_cuda=args.use_cuda,
                                    reshape_transform=reshape_transform)
-
-    rgb_img = cv2.imread(args.image_path, 1)[:, :, ::-1]
-    rgb_img = cv2.resize(rgb_img, (224, 224))
-    rgb_img = np.float32(rgb_img) / 255
-    input_tensor = preprocess_image(rgb_img, mean=[0.5, 0.5, 0.5],
-                                    std=[0.5, 0.5, 0.5])
-    output = model(input_tensor)
-    # If None, returns the map for the highest scoring category.
-    # Otherwise, targets the requested category.
-    targets = None
-
-    # AblationCAM and ScoreCAM have batched implementations.
-    # You can override the internal batch size for faster computation.
-    cam.batch_size = 32
-
-    grayscale_cam = cam(input_tensor=input_tensor,
-                        targets=targets,
-                        eigen_smooth=args.eigen_smooth,
-                        aug_smooth=args.aug_smooth)
-
-    # Here grayscale_cam has only one image in the batch
-    grayscale_cam = grayscale_cam[0, :]
-
-    cam_image = show_cam_on_image(rgb_img, grayscale_cam)
-    cv2.imwrite(f'{args.method}_cam.jpg', cam_image)
+    img_list = os.listdir(args.image_path)
+    for img_ in img_list:
+        image_path_ = os.path.join(args.image_path,img_)
+        rgb_img = cv2.imread(image_path_, 1)[:, :, ::-1]
+        rgb_img = cv2.resize(rgb_img, (224, 224))
+        rgb_img = np.float32(rgb_img) / 255
+        input_tensor = preprocess_image(rgb_img, mean=[0.5, 0.5, 0.5],
+                                        std=[0.5, 0.5, 0.5])
+        output = model(input_tensor)
+        # If None, returns the map for the highest scoring category.
+        # Otherwise, targets the requested category.
+        targets = None
+    
+        # AblationCAM and ScoreCAM have batched implementations.
+        # You can override the internal batch size for faster computation.
+        cam.batch_size = 32
+    
+        grayscale_cam = cam(input_tensor=input_tensor,
+                            targets=targets,
+                            eigen_smooth=args.eigen_smooth,
+                            aug_smooth=args.aug_smooth)
+    
+        # Here grayscale_cam has only one image in the batch
+        grayscale_cam = grayscale_cam[0, :]
+    
+        cam_image = show_cam_on_image(rgb_img, grayscale_cam)
+        cv2.imwrite(img_.split('.')[0]+'_cam.jpg', cam_image)

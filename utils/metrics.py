@@ -10,7 +10,6 @@ def euclidean_distance(qf, gf):
     dist_mat = torch.pow(qf, 2).sum(dim=1, keepdim=True).expand(m, n) + \
                torch.pow(gf, 2).sum(dim=1, keepdim=True).expand(n, m).t()
     dist_mat.addmm_(1, -2, qf, gf.t())
-    print("here")
     return dist_mat.cpu().numpy()
 def scipy_euclidean_distance(qf, gf):
     dist = distance.cdist(qf,gf, metric='euclidean')
@@ -194,14 +193,14 @@ class R1_mAP_eval():
 
     def update(self, output):  # called once for each batch
         feat, pid, camid = output
-        # self.feats.append(feat.cpu())
+        self.feats.append(feat.cpu())
         self.pids.extend(np.asarray(pid))
         self.camids.extend(np.asarray(camid))
 
     def compute(self):  # called after each epoch
-        # feats = torch.cat(self.feats, dim=0)
-        feats = torch.load("feats.pt")
-        # torch.save(feats,"feats.pt")
+        feats = torch.cat(self.feats, dim=0)
+        # feats = torch.load("msmt_trainset_feats.pt")
+        # torch.save(feats,"msmt_trainset_feats.pt")
         # raise KeyboardInterrupt
         if self.feat_norm:
             print("The test feature is normalized")
@@ -227,5 +226,33 @@ class R1_mAP_eval():
 
         return cmc, mAP, distmat, self.pids, self.camids, qf, gf
 
+    # todo 230921 make msmt trainset validation
+    def compute_train_all(self):  # called after each epoch
+        # feats = torch.cat(self.feats, dim=0)
+        feats = torch.load("utils/checks/msmt_research/msmt_trainset_feats.pt")
+        # torch.save(feats,"msmt_trainset_feats.pt")
+        # raise KeyboardInterrupt
+        if self.feat_norm:
+            print("The test feature is normalized")
+            feats = torch.nn.functional.normalize(feats, dim=1, p=2)  # along channel
+        for i in range(feats.shape[0]):
+            # query
+            qf = feats[i].unsqueeze()
+            q_pids = np.asarray(self.pids[i])
+            q_camids = np.asarray(self.camids[i])
+            # gallery
+            gf = torch.cat([feats[:i], feats[i+1:]])
+            g_pids = np.asarray(self.pids[:i]+self.pids[i+1:])
+            g_camids = np.asarray(self.camids[:i]+self.camids[i + 1:])
+            if self.reranking:
+                print('=> Enter reranking')
+                # distmat = re_ranking(qf, gf, k1=20, k2=6, lambda_value=0.3)
+                distmat = re_ranking(qf, gf, k1=50, k2=15, lambda_value=0.3)
 
+            else:
+                print('=> Computing DistMat with euclidean_distance')
+                distmat = euclidean_distance(qf, gf)
+            cmc, mAP = eval_func(distmat, q_pids, g_pids, q_camids, g_camids)
+
+        return cmc, mAP, distmat, self.pids, self.camids, qf, gf
 

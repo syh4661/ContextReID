@@ -299,8 +299,7 @@ def do_inference(cfg,
             model = nn.DataParallel(model)
         model.to(device)
 
-    # model.eval()
-    img_path_list = []
+    model.eval()
     if TRANS_INTPRET:
         attribution_generator = LRP(model)
     if GRAD_CAM:
@@ -331,66 +330,78 @@ def do_inference(cfg,
     class EmptyContext:
         def __enter__(self):
             pass
-
         def __exit__(self, exc_type, exc_value, traceback):
             pass
 
     from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
+    text_out_list=[]
 
+    # todo 230921 prompt output save with trainset
+    with open('trainset_prompt_output.txt', 'w') as train_prompts:
+        for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
+            with torch.no_grad():
+            # with EmptyContext():
+                img = img.to(device)
+                if cfg.MODEL.SIE_CAMERA:
+                    camids = camids.to(device)
+                else:
+                    camids = None
+                if cfg.MODEL.SIE_VIEW:
+                    target_view = target_view.to(device)
+                else:
+                    target_view = None
+                #feat = model(img, cam_label=camids, view_label=target_view)
+                # 230921 SYH add text output
+                _,text_out = model(label=torch.tensor(pid, dtype=torch.int64),get_text=True)
+                train_prompts.writelines([text_[0][:-68]+'\n' for text_ in text_out])
 
-    for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
-        with torch.no_grad():
-        # with EmptyContext():
-            img = img.to(device)
-            if cfg.MODEL.SIE_CAMERA:
-                camids = camids.to(device)
-            else: 
-                camids = None
-            if cfg.MODEL.SIE_VIEW:
-                target_view = target_view.to(device)
-            else: 
-                target_view = None
-            #feat = model(img, cam_label=camids, view_label=target_view)
-            feat = model(img, cam_label=camids, view_label=target_view)
-            if TRANS_INTPRET:
-                cat = generate_visualization(img,attribution_generator)
-                fig, axs = plt.subplots(1, 2)
-                axs[0].imshow(img)
-                axs[0].axis('off')
+                # print(text_out)
+                #feat = model(img, cam_label=camids, view_label=target_view)
+                # todo 230921 make msmt trainset validation
+                feat = 0#model(img, cam_label=camids, view_label=target_view)
 
-                axs[1].imshow(cat)
-                axs[1].axis('off')
-            evaluator.update((feat, pid, camid))
-            # img_path_list.extend(imgpath)
-            if GRAD_CAM:
-                targets_cam =None
-                # if cfg.DATASETS.NAMES == 'msmt17':
-                #     targets_cam = [ClassifierOutputTarget(int(imgpath[i][:4])) for i in range(cfg.TEST.IMS_PER_BATCH)]
-                # else:
-                #     targets_cam = [ClassifierOutputTarget(tar_) for tar_ in
-                #                    torch.argmax(model.classifier(feat[:, :768]), dim=1)]
-                grayscale_cam = cam(input_tensor=img,
-                                    targets=targets_cam,
-                                    eigen_smooth=False,
-                                    aug_smooth=False)
-                for i in range(len(imgpath)):
-                    grayscale_cam_ = grayscale_cam[i, :]
-                    # rgb_img = Image.open().convert('RGB')
-                    if cfg.DATASETS.NAMES=='msmt17':
-                        rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]), 1)[:, :,::-1]
-                    else:
-                        rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MUF_KETI/bounding_box_train",imgpath[i]), 1)[:, :, ::-1]
-                    rgb_img = cv2.resize(rgb_img, (128, 256))
-                    rgb_img = np.float32(rgb_img) / 255
+                if TRANS_INTPRET:
+                    cat = generate_visualization(img,attribution_generator)
+                    fig, axs = plt.subplots(1, 2)
+                    axs[0].imshow(img)
+                    axs[0].axis('off')
 
-                    cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
-                    save_name = imgpath[i].split('.')[0]+'_grad'+'.jpg'
-                    cv2.imwrite(os.path.join('/media/syh/ssd2/data/ReID/MSMT17/query_ClipReID_output_grad',save_name), cam_image)
+                    axs[1].imshow(cat)
+                    axs[1].axis('off')
 
+                evaluator.update((feat, pid, camid))
 
-    cmc, mAP, _, _, _, _, _ = evaluator.compute()
-    logger.info("Validation Results ")
-    logger.info("mAP: {:.1%}".format(mAP))
-    for r in [1, 5, 10]:
-        logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
-    return cmc[0], cmc[4]
+                # img_path_list.extend(imgpath)
+                if GRAD_CAM:
+                    targets_cam =None
+                    # if cfg.DATASETS.NAMES == 'msmt17':
+                    #     targets_cam = [ClassifierOutputTarget(int(imgpath[i][:4])) for i in range(cfg.TEST.IMS_PER_BATCH)]
+                    # else:
+                    #     targets_cam = [ClassifierOutputTarget(tar_) for tar_ in
+                    #                    torch.argmax(model.classifier(feat[:, :768]), dim=1)]
+                    grayscale_cam = cam(input_tensor=img,
+                                        targets=targets_cam,
+                                        eigen_smooth=False,
+                                        aug_smooth=False)
+                    for i in range(len(imgpath)):
+                        grayscale_cam_ = grayscale_cam[i, :]
+                        # rgb_img = Image.open().convert('RGB')
+                        if cfg.DATASETS.NAMES=='msmt17':
+                            rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]), 1)[:, :,::-1]
+                        else:
+                            rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MUF_KETI/bounding_box_train",imgpath[i]), 1)[:, :, ::-1]
+                        rgb_img = cv2.resize(rgb_img, (128, 256))
+                        rgb_img = np.float32(rgb_img) / 255
+
+                        cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
+                        save_name = imgpath[i].split('.')[0]+'_grad'+'.jpg'
+                        cv2.imwrite(os.path.join('/media/syh/ssd2/data/ReID/MSMT17/query_ClipReID_output_grad',save_name), cam_image)
+
+        # todo 230921 make msmt trainset validation
+        # cmc, mAP, _, _, _, _, _ = evaluator.compute()
+        cmc, mAP, _, _, _, _, _ = evaluator.compute_train_all()
+        logger.info("Validation Results ")
+        logger.info("mAP: {:.1%}".format(mAP))
+        for r in [1, 5, 10]:
+            logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
+        return cmc[0], cmc[4]

@@ -16,7 +16,7 @@ class MUF_KETI(BaseImageDataset):
     # images: 32621 (train) + 11659 (query) + 82161 (gallery)
     # cameras: 15
     """
-    dataset_dir = 'MUF_KETI'
+    dataset_dir = '20230629'
 
     def __init__(self, root='', verbose=True, pid_begin=0, **kwargs):
         super(MUF_KETI, self).__init__()
@@ -78,7 +78,7 @@ class MUF_KETI(BaseImageDataset):
         for img_idx, img_info in enumerate(lines):
             img_path, pid = img_info.split(' ')
             pid = int(pid)-1  # no need to relabel # MUF_KETI start 1
-            camid = int(img_path.split('_')[1])
+            camid = int(img_path.split('_')[1][1:])
             img_path = osp.join(dir_path, img_path)
             dataset.append((img_path, self.pid_begin+pid, self._cam_map(camid), 0))
             pid_container.add(pid)

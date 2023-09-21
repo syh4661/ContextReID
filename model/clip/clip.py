@@ -23,7 +23,7 @@ if torch.__version__.split(".") < ["1", "7", "1"]:
     warnings.warn("PyTorch version 1.7.1 or higher is recommended")
 
 
-__all__ = ["available_models", "load", "tokenize"]
+__all__ = ["available_models", "load", "tokenize", "untokenize"]
 _tokenizer = _Tokenizer()
 
 _MODELS = {
@@ -220,4 +220,77 @@ def tokenize(texts: Union[str, List[str]], context_length: int = 77, truncate: b
                 raise RuntimeError(f"Input {texts[i]} is too long for context length {context_length}")
         result[i, :len(tokens)] = torch.tensor(tokens)
 
-    return result 
+    return result
+
+
+from typing import List, Union
+import torch
+
+
+def untokenize(tokens: torch.LongTensor) -> List[str]:
+    """
+    Returns the detokenized representation of given input tokens
+
+    Parameters
+    ----------
+    tokens : torch.LongTensor
+        A two-dimensional tensor containing tokens, shape = [number of input strings, context_length]
+
+    Returns
+    -------
+    A list of detokenized strings
+    """
+    texts = []
+    sot_token = _tokenizer.encoder["<|startoftext|>"]  # Start-of-text token; 수정 필요
+    eot_token = _tokenizer.encoder["<|endoftext|>"]  # End-of-text token; 수정 필요
+
+    # for token_sequence in tokens:
+    #     # Convert tensor to list of tokens
+    #     # token_list = token_sequence.tolist()
+    #     token_list = token_sequence
+    #
+    #     # Remove start-of-text and end-of-text tokens
+    #     token_list = [token for token in token_list if token not in (sot_token, eot_token)]
+    #
+    #     # Convert tokens back to text
+    #     text = _tokenizer.decode(token_list)
+    #     texts.append(text)
+
+        # Convert tensor to list of tokens
+        # token_list = token_sequence.tolist()
+    token_list = tokens
+
+    # Remove start-of-text and end-of-text tokens
+    token_list = [token for token in token_list if token not in (sot_token, eot_token)]
+
+    # Convert tokens back to text
+    text = _tokenizer.decode(token_list)
+    texts.append(text)
+    return texts
+
+import torch.nn as nn
+def unembedding(embeddings: torch.Tensor, token_embedding: nn.Embedding) -> List[List[int]]:
+    """
+    Returns the token indices corresponding to the given embeddings
+
+    Parameters
+    ----------
+    embeddings : torch.Tensor
+        A tensor containing embeddings to unembed
+
+    token_embedding : nn.Embedding
+        The token embedding layer
+
+    Returns
+    -------
+    A list of lists containing token indices
+    """
+    token_indices = []
+    all_embeddings = token_embedding.weight.detach()  # Shape: [vocab_size, embedding_dim]
+
+    for embedding in embeddings:
+        distances = torch.norm(all_embeddings - embedding, dim=1)  # Calculate L2 distance
+        closest_index = distances.argmin().item()  # Find the index of the closest embedding
+        token_indices.append(closest_index)
+
+    return token_indices

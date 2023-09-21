@@ -1,6 +1,9 @@
 # 230918
 # 3rd accred ## 5. ReID 정확도
 
+# data ready ./utils/keti2msmt.ipynb
+# setting keti data directory tree msmt style
+
 # 5-1. model run
 python test_clipreid.py --config_file configs/person/vit_clipreid_KETI.yml MODEL.DIST_TRAIN False MODEL.DEVICE_ID "('0')"
 

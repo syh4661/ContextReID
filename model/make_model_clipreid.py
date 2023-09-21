@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import numpy as np
+
+import model.clip.clip
 from .clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 _tokenizer = _Tokenizer()
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
@@ -104,11 +106,21 @@ class build_transformer(nn.Module):
         self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
         self.text_encoder = TextEncoder(clip_model)
 
+        self.token_embedding = clip_model.token_embedding
+        self.unembedder = clip.unembedding
+        self.untokenizer = clip.untokenize
+
     def forward(self, x = None, label=None, get_image = False, get_text = False, cam_label= None, view_label=None):
         if get_text == True:
-            prompts = self.prompt_learner(label) 
+            prompts = self.prompt_learner(label)
             text_features = self.text_encoder(prompts, self.prompt_learner.tokenized_prompts)
-            return text_features
+            # decode here
+            text_out=[]
+            for i in range(prompts.shape[0]):
+                unembedd = self.unembedder(prompts[i],self.token_embedding)
+                text_out.append(self.untokenizer(unembedd))
+            # _tokenizer.decode(self.prompt_learner.tokenized_prompts.tolist()[0])
+            return text_features,text_out
 
         if get_image == True:
             image_features_last, image_features, image_features_proj = self.image_encoder(x) 
@@ -209,7 +221,7 @@ class PromptLearner(nn.Module):
         n_cls_ctx = 4
         cls_vectors = torch.empty(num_class, n_cls_ctx, ctx_dim, dtype=dtype) 
         nn.init.normal_(cls_vectors, std=0.02)
-        self.cls_ctx = nn.Parameter(cls_vectors) 
+        self.cls_ctx = nn.Parameter(cls_vectors)  # n_classes, 4, 512
 
         
         # These token vectors will be saved when in save_model(),
@@ -221,7 +233,7 @@ class PromptLearner(nn.Module):
         self.n_cls_ctx = n_cls_ctx
 
     def forward(self, label):
-        cls_ctx = self.cls_ctx[label] 
+        cls_ctx = self.cls_ctx[label]
         b = label.shape[0]
         prefix = self.token_prefix.expand(b, -1, -1) 
         suffix = self.token_suffix.expand(b, -1, -1) 
