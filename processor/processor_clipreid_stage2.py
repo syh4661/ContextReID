@@ -352,13 +352,14 @@ def do_inference(cfg,
                     target_view = None
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # 230921 SYH add text output
-                _,text_out = model(label=torch.tensor(pid, dtype=torch.int64),get_text=True)
-                train_prompts.writelines([text_[0][:-68]+'\n' for text_ in text_out])
+                # if WRITE_PROMPT:
+                #    _,text_out = model(label=torch.tensor(pid, dtype=torch.int64),get_text=True)
+                # train_prompts.writelines([text_[0][:-68]+'\n' for text_ in text_out])
 
                 # print(text_out)
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
-                feat = 0#model(img, cam_label=camids, view_label=target_view)
+                feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)
 
                 if TRANS_INTPRET:
                     cat = generate_visualization(img,attribution_generator)
@@ -399,7 +400,7 @@ def do_inference(cfg,
 
         # todo 230921 make msmt trainset validation
         # cmc, mAP, _, _, _, _, _ = evaluator.compute()
-        cmc, mAP, _, _, _, _, _ = evaluator.compute_train_all()
+        cmc, mAP, _, _, _, _, _ = evaluator.compute_train_all(logger)
         logger.info("Validation Results ")
         logger.info("mAP: {:.1%}".format(mAP))
         for r in [1, 5, 10]:
