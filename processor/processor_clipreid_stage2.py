@@ -151,17 +151,32 @@ def do_train_stage2(cfg,
     if left != 0 :
         i_ter = i_ter+1
     text_features = []
+    text_features_cluster= []
     with torch.no_grad():
-        for i in range(i_ter):
-            if i+1 != i_ter:
-                l_list = torch.arange(i*batch, (i+1)* batch)
-            else:
-                l_list = torch.arange(i*batch, num_classes)
-            with amp.autocast(enabled=True):
-                text_feature = model(label = l_list, get_text = True)
-            text_features.append(text_feature.cpu())
-        text_features = torch.cat(text_features, 0).cuda()
-
+        if cfg.DATASETS.CLUSTER:
+            cluster_trig=torch.ones(64)
+            for i in range(i_ter):
+                if i+1 != i_ter:
+                    l_list = torch.arange(i*batch, (i+1)* batch)
+                else:
+                    l_list = torch.arange(i*batch, num_classes)
+                with amp.autocast(enabled=True):
+                    text_feature = model(label=l_list, get_text=True)
+                    text_feature_cluster = model.forward_clustered(label=l_list, get_text=True, cluster=cluster_trig)
+                text_features.append(text_feature.cpu())
+                text_features_cluster.append(text_feature_cluster.cpu())
+            text_features = torch.cat(text_features, 0).cuda()
+            text_features_cluster = torch.cat(text_features_cluster, 0).cuda()
+        else:
+            for i in range(i_ter):
+                if i+1 != i_ter:
+                    l_list = torch.arange(i*batch, (i+1)* batch)
+                else:
+                    l_list = torch.arange(i*batch, num_classes)
+                with amp.autocast(enabled=True):
+                    text_feature = model(label = l_list, get_text = True)
+                text_features.append(text_feature.cpu())
+            text_features = torch.cat(text_features, 0).cuda()
     for epoch in range(1, epochs + 1):
         start_time = time.time()
         loss_meter.reset()
@@ -171,22 +186,37 @@ def do_train_stage2(cfg,
         scheduler.step()
 
         model.train()
-        for n_iter, (img, vid, target_cam, target_view) in enumerate(train_loader_stage2):
+        for n_iter, items in enumerate(train_loader_stage2):
+            if len(items)==5:
+                img, vid, target_cam, target_view,clusters = items
+            else:
+                img, vid, target_cam, target_view=items
+
             optimizer.zero_grad()
             optimizer_center.zero_grad()
             img = img.to(device)
             target = vid.to(device)
             if cfg.MODEL.SIE_CAMERA:
                 target_cam = target_cam.to(device)
-            else: 
+            else:
                 target_cam = None
             if cfg.MODEL.SIE_VIEW:
                 target_view = target_view.to(device)
-            else: 
+            else:
                 target_view = None
             with amp.autocast(enabled=True):
                 score, feat, image_features = model(x = img, label = target, cam_label=target_cam, view_label=target_view)
-                logits = image_features @ text_features.t()
+                if len(items)==5:
+                    ## Todo 230926 make max pooling in solo-clustered
+                    text_features_ = torch.cat((text_features, text_features_cluster), dim=0)
+                    logits = image_features @ text_features_.t()
+                    first_part = logits[:, :num_classes]
+                    second_part = logits[:, num_classes:]
+                    # Compare and select the max values
+                    logits = torch.max(first_part, second_part)
+
+                else:
+                    logits = image_features @ text_features.t()
                 loss = loss_fn(score, feat, target, target_cam, logits)
 
             scaler.scale(loss).backward()

@@ -54,6 +54,7 @@ class TextEncoder(nn.Module):
 class build_transformer(nn.Module):
     def __init__(self, num_classes, camera_num, view_num, cfg):
         super(build_transformer, self).__init__()
+        self.cluster_check = cfg.DATASETS.CLUSTER
         self.model_name = cfg.MODEL.NAME
         self.cos_layer = cfg.MODEL.COS_LAYER
         self.neck = cfg.MODEL.NECK
@@ -103,7 +104,11 @@ class build_transformer(nn.Module):
             print('camera number is : {}'.format(view_num))
 
         dataset_name = cfg.DATASETS.NAMES
-        self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
+        if cfg.DATASETS.CLUSTER:
+            self.prompt_learner = PromptLearnerCluster(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
+        else :
+            self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
+
         self.text_encoder = TextEncoder(clip_model)
 
         self.token_embedding = clip_model.token_embedding
@@ -115,12 +120,12 @@ class build_transformer(nn.Module):
             prompts = self.prompt_learner(label)
             text_features = self.text_encoder(prompts, self.prompt_learner.tokenized_prompts)
             # decode here
-            text_out=[]
-            for i in range(prompts.shape[0]):
-                unembedd = self.unembedder(prompts[i],self.token_embedding)
-                text_out.append(self.untokenizer(unembedd))
+            # text_out=[]
+            # for i in range(prompts.shape[0]):
+            #     unembedd = self.unembedder(prompts[i],self.token_embedding)
+            #     text_out.append(self.untokenizer(unembedd))
             # _tokenizer.decode(self.prompt_learner.tokenized_prompts.tolist()[0])
-            return text_features,text_out
+            return text_features#,text_out
 
         if get_image == True:
             image_features_last, image_features, image_features_proj = self.image_encoder(x) 
@@ -152,6 +157,65 @@ class build_transformer(nn.Module):
         feat = self.bottleneck(img_feature) 
         feat_proj = self.bottleneck_proj(img_feature_proj) 
         
+        if self.training:
+            cls_score = self.classifier(feat)
+            cls_score_proj = self.classifier_proj(feat_proj)
+            return [cls_score, cls_score_proj], [img_feature_last, img_feature, img_feature_proj], img_feature_proj
+
+        else:
+            if self.neck_feat == 'after':
+                # print("Test with feature after BN")
+                return torch.cat([feat, feat_proj], dim=1)
+            else:
+                return torch.cat([img_feature, img_feature_proj], dim=1)
+                # return self.classifier(feat)
+
+    def forward_clustered(self, x=None, label=None, get_image=False, get_text=False, cam_label=None, view_label=None,cluster=None):
+        if get_text == True:
+            if self.cluster_check:
+                prompts = self.prompt_learner((label,cluster))
+            else:
+                prompts = self.prompt_learner(label)
+            text_features = self.text_encoder(prompts, self.prompt_learner.tokenized_prompts)
+            # decode here
+            # text_out=[]
+            # for i in range(prompts.shape[0]):
+            #     unembedd = self.unembedder(prompts[i],self.token_embedding)
+            #     text_out.append(self.untokenizer(unembedd))
+            # _tokenizer.decode(self.prompt_learner.tokenized_prompts.tolist()[0])
+            return text_features  # ,text_out
+
+        if get_image == True:
+            image_features_last, image_features, image_features_proj = self.image_encoder(x)
+            if self.model_name == 'RN50':
+                return image_features_proj[0]
+            elif self.model_name == 'ViT-B-16':
+                return image_features_proj[:, 0]
+
+        if self.model_name == 'RN50':
+            image_features_last, image_features, image_features_proj = self.image_encoder(x)
+            img_feature_last = nn.functional.avg_pool2d(image_features_last, image_features_last.shape[2:4]).view(
+                x.shape[0], -1)
+            img_feature = nn.functional.avg_pool2d(image_features, image_features.shape[2:4]).view(x.shape[0], -1)
+            img_feature_proj = image_features_proj[0]
+
+        elif self.model_name == 'ViT-B-16':
+            if cam_label != None and view_label != None:
+                cv_embed = self.sie_coe * self.cv_embed[cam_label * self.view_num + view_label]
+            elif cam_label != None:
+                cv_embed = self.sie_coe * self.cv_embed[cam_label]
+            elif view_label != None:
+                cv_embed = self.sie_coe * self.cv_embed[view_label]
+            else:
+                cv_embed = None
+            image_features_last, image_features, image_features_proj = self.image_encoder(x, cv_embed)
+            img_feature_last = image_features_last[:, 0]
+            img_feature = image_features[:, 0]
+            img_feature_proj = image_features_proj[:, 0]
+
+        feat = self.bottleneck(img_feature)
+        feat_proj = self.bottleneck_proj(img_feature_proj)
+
         if self.training:
             cls_score = self.classifier(feat)
             cls_score_proj = self.classifier_proj(feat_proj)
@@ -205,6 +269,9 @@ class PromptLearner(nn.Module):
         super().__init__()
         if dataset_name == "VehicleID" or dataset_name == "veri":
             ctx_init = "A photo of a X X X X vehicle."
+        elif dataset_name == 'msmt17clustered':
+            ctx_init = "A photo of a X X X X person."
+            ctx_init_clustered = "A photo of two X X X X people."
         else:
             ctx_init = "A photo of a X X X X person."
 
@@ -213,10 +280,20 @@ class PromptLearner(nn.Module):
         ctx_init = ctx_init.replace("_", " ")
         n_ctx = 4
         
-        tokenized_prompts = clip.tokenize(ctx_init).cuda() 
+        tokenized_prompts = clip.tokenize(ctx_init).cuda()
+
+        if dataset_name == 'msmt17clustered':
+            tokenized_prompts_clustered = clip.tokenize(ctx_init_clustered).cuda()
+
+
         with torch.no_grad():
-            embedding = token_embedding(tokenized_prompts).type(dtype) 
+            embedding = token_embedding(tokenized_prompts).type(dtype)
+            if dataset_name == 'msmt17clustered':
+                embedding_clustered = token_embedding(tokenized_prompts_clustered).type(dtype)
         self.tokenized_prompts = tokenized_prompts  # torch.Tensor
+
+        if dataset_name == 'msmt17clustered':
+            self.tokenized_prompts_clustered = tokenized_prompts_clustered
 
         n_cls_ctx = 4
         cls_vectors = torch.empty(num_class, n_cls_ctx, ctx_dim, dtype=dtype) 
@@ -228,16 +305,16 @@ class PromptLearner(nn.Module):
         # but they should be ignored in load_model() as we want to use
         # those computed using the current class names
         self.register_buffer("token_prefix", embedding[:, :n_ctx + 1, :])  
-        self.register_buffer("token_suffix", embedding[:, n_ctx + 1 + n_cls_ctx: , :])  
+        self.register_buffer("token_suffix", embedding[:, n_ctx + 1 + n_cls_ctx: , :])
         self.num_class = num_class
         self.n_cls_ctx = n_cls_ctx
 
     def forward(self, label):
         cls_ctx = self.cls_ctx[label]
         b = label.shape[0]
-        prefix = self.token_prefix.expand(b, -1, -1) 
-        suffix = self.token_suffix.expand(b, -1, -1) 
-            
+        prefix = self.token_prefix.expand(b, -1, -1)
+        suffix = self.token_suffix.expand(b, -1, -1)
+
         prompts = torch.cat(
             [
                 prefix,  # (n_cls, 1, dim)
@@ -247,5 +324,94 @@ class PromptLearner(nn.Module):
             dim=1,
         ) 
 
-        return prompts 
+        return prompts
+
+
+class PromptLearnerCluster(nn.Module):
+    def __init__(self, num_class, dataset_name, dtype, token_embedding):
+        super().__init__()
+        if dataset_name == "VehicleID" or dataset_name == "veri":
+            ctx_init = "A photo of a X X X X vehicle."
+        elif dataset_name == 'msmt17clustered':
+            ctx_init = "A photo of a X X X X person."
+            ctx_init_clustered = "A photo of two X X X X people."
+        else:
+            ctx_init = "A photo of a X X X X person."
+
+        ctx_dim = 512
+        # use given words to initialize context vectors
+        ctx_init = ctx_init.replace("_", " ")
+        n_ctx = 4
+
+        tokenized_prompts = clip.tokenize(ctx_init).cuda()
+
+        if dataset_name == 'msmt17clustered':
+            tokenized_prompts_clustered = clip.tokenize(ctx_init_clustered).cuda()
+
+        with torch.no_grad():
+            embedding = token_embedding(tokenized_prompts).type(dtype)
+            if dataset_name == 'msmt17clustered':
+                embedding_clustered = token_embedding(tokenized_prompts_clustered).type(dtype)
+        self.tokenized_prompts = tokenized_prompts  # torch.Tensor
+
+        if dataset_name == 'msmt17clustered':
+            self.tokenized_prompts_clustered = tokenized_prompts_clustered
+
+        n_cls_ctx = 4
+        cls_vectors = torch.empty(num_class, n_cls_ctx, ctx_dim, dtype=dtype)
+        nn.init.normal_(cls_vectors, std=0.02)
+        self.cls_ctx = nn.Parameter(cls_vectors)  # n_classes, 4, 512
+
+        # These token vectors will be saved when in save_model(),
+        # but they should be ignored in load_model() as we want to use
+        # those computed using the current class names
+        self.register_buffer("token_prefix", embedding[:, :n_ctx + 1, :])
+        self.register_buffer("token_suffix", embedding[:, n_ctx + 1 + n_cls_ctx:, :])
+        self.register_buffer("token_prefix_cluster", embedding_clustered[:, :n_ctx + 1, :])
+        self.register_buffer("token_suffix_cluster", embedding_clustered[:, n_ctx + 1 + n_cls_ctx:, :])
+        self.num_class = num_class
+        self.n_cls_ctx = n_cls_ctx
+
+    def forward(self, input_):
+
+        if len(input_)==2:
+            label,cluster = input_
+        else:
+            label=input_
+            # cluster
+        cls_ctx = self.cls_ctx[label]
+        b = label.shape[0]
+
+        prefix = self.token_prefix.expand(b, -1, -1)
+        suffix = self.token_suffix.expand(b, -1, -1)
+
+        cluster_ind = []
+        if len(input_) == 2:
+
+            for i in range(b):
+                if cluster[i]==True:
+                    cluster_ind.append(i)
+        prompts = torch.cat(
+            [
+                prefix,  # (n_cls, 1, dim)
+                cls_ctx,  # (n_cls, n_ctx, dim)
+                suffix,  # (n_cls, *, dim)
+            ],
+            dim=1,
+        )
+
+        if len(cluster_ind)!=0:
+            for i in cluster_ind:
+                prefix_cluster = self.token_prefix_cluster.squeeze()
+                suffix_cluster = self.token_suffix_cluster.squeeze()
+                prompts[i]=torch.cat(
+                    [
+                        prefix_cluster, # 1,dim
+                        cls_ctx[i],# n_ctx,dim
+                        suffix_cluster# *,dim
+                ],
+                dim=0,
+                )
+
+        return prompts
 

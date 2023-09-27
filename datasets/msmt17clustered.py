@@ -7,7 +7,7 @@ import os.path as osp
 from .bases import BaseImageDataset
 
 
-class MSMT17CLUSTERD(BaseImageDataset):
+class MSMT17CLUSTERED(BaseImageDataset):
     """
     MSMT17
 
@@ -21,15 +21,15 @@ class MSMT17CLUSTERD(BaseImageDataset):
     # images: 32621 (train) + 11659 (query) + 82161 (gallery)
     # cameras: 15
     """
-    dataset_dir = 'MSMT17CLUSTERD'
+    dataset_dir = 'MSMT17CLUSTERED'
 
     def __init__(self, root='', verbose=True, pid_begin=0, **kwargs):
-        super(MSMT17, self).__init__()
+        super(MSMT17CLUSTERED, self).__init__()
         self.pid_begin = pid_begin
         self.dataset_dir = osp.join(root, self.dataset_dir)
         self.train_dir = osp.join(self.dataset_dir, 'train')
         self.test_dir = osp.join(self.dataset_dir, 'test')
-        self.list_train_path = osp.join(self.dataset_dir, 'list_train.txt')
+        self.list_train_path = osp.join(self.dataset_dir, 'list_train_val_clustered.txt')
         self.list_val_path = osp.join(self.dataset_dir, 'list_val.txt')
         self.list_query_path = osp.join(self.dataset_dir, 'list_query.txt')
         self.list_gallery_path = osp.join(self.dataset_dir, 'list_gallery.txt')
@@ -37,7 +37,7 @@ class MSMT17CLUSTERD(BaseImageDataset):
         self._check_before_run()
         train = self._process_dir(self.train_dir, self.list_train_path)
         val = self._process_dir(self.train_dir, self.list_val_path)
-        train += val
+        # train += val
         query = self._process_dir(self.test_dir, self.list_query_path)
         gallery = self._process_dir(self.test_dir, self.list_gallery_path)
         if verbose:
@@ -51,6 +51,23 @@ class MSMT17CLUSTERD(BaseImageDataset):
         self.num_train_pids, self.num_train_imgs, self.num_train_cams, self.num_train_vids = self.get_imagedata_info(self.train)
         self.num_query_pids, self.num_query_imgs, self.num_query_cams, self.num_query_vids = self.get_imagedata_info(self.query)
         self.num_gallery_pids, self.num_gallery_imgs, self.num_gallery_cams, self.num_gallery_vids = self.get_imagedata_info(self.gallery)
+
+    def get_imagedata_info(self, data):
+        pids, cams, tracks,clusters = [], [], [],[]
+        for _, pid, camid, trackid,cluster in data:
+            pids += [pid]
+            cams += [camid]
+            tracks += [trackid]
+            clusters += [cluster]
+        pids = set(pids)
+        cams = set(cams)
+        tracks = set(tracks)
+        num_pids = len(pids)
+        num_cams = len(cams)
+        num_imgs = len(data)
+        num_views = len(tracks)
+        return num_pids, num_imgs, num_cams, num_views
+
     def _check_before_run(self):
         """Check if all files are available before going deeper"""
         if not osp.exists(self.dataset_dir):
@@ -70,8 +87,12 @@ class MSMT17CLUSTERD(BaseImageDataset):
             img_path, pid = img_info.split(' ')
             pid = int(pid)  # no need to relabel
             camid = int(img_path.split('_')[2])
+            if len(img_path.split('_'))==7:
+                clustered = True
+            else:
+                clustered = False
             img_path = osp.join(dir_path, img_path)
-            dataset.append((img_path, self.pid_begin+pid, camid-1, 0))
+            dataset.append((img_path, self.pid_begin+pid, camid-1, 0,clustered))
             pid_container.add(pid)
             cam_container.add(camid)
         print(cam_container, 'cam_container')
