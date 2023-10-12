@@ -389,7 +389,8 @@ def do_inference(cfg,
                 # print(text_out)
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
-                feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)
+                # feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)
+                feat = model(img, cam_label=camids, view_label=target_view)
 
                 if TRANS_INTPRET:
                     cat = generate_visualization(img,attribution_generator)
@@ -429,8 +430,8 @@ def do_inference(cfg,
                         cv2.imwrite(os.path.join('/media/syh/ssd2/data/ReID/MSMT17/query_ClipReID_output_grad',save_name), cam_image)
 
         # todo 230921 make msmt trainset validation
-        # cmc, mAP, _, _, _, _, _ = evaluator.compute()
-        cmc, mAP, _, _, _, _, _ = evaluator.compute_train_all(logger)
+        cmc, mAP, _, _, _, _, _ = evaluator.compute()
+        # cmc, mAP, _, _, _, _, _ = evaluator.compute_train_all(logger)
         logger.info("Validation Results ")
         logger.info("mAP: {:.1%}".format(mAP))
         for r in [1, 5, 10]:

@@ -306,6 +306,8 @@ class PromptLearner(nn.Module):
         # those computed using the current class names
         self.register_buffer("token_prefix", embedding[:, :n_ctx + 1, :])  
         self.register_buffer("token_suffix", embedding[:, n_ctx + 1 + n_cls_ctx: , :])
+        self.register_buffer("token_prefix_cluster", embedding[:, :n_ctx + 1, :])
+        self.register_buffer("token_suffix_cluster", embedding[:, n_ctx + 1 + n_cls_ctx:, :])
         self.num_class = num_class
         self.n_cls_ctx = n_cls_ctx
 

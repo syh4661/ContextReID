@@ -216,9 +216,7 @@ def eval_func_all(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
             top_ind.append(order[keep][i])
         if not np.any(orig_cmc):
             # this condition is true when query identity does not appear in gallery
-            print(q_idx)
-            print(q_pids[q_idx])
-            return 0,0,0,0
+            # return 0,0,0,0
             continue
         cmc = orig_cmc.cumsum()
         cmc[cmc > 1] = 1
