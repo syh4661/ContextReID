@@ -29,8 +29,7 @@ from pytorch_grad_cam.utils.image import show_cam_on_image, \
     preprocess_image
 from pytorch_grad_cam.ablation_layer import AblationLayerVit
 
-from utils.visualization.baselines.ViT.ViT_explanation_generator import LRP
-
+from utils.visualization.ViT_explanation_generator import LRP
 
 def generate_visualization(original_image, attribution_generator,class_index=None):
     transformer_attribution = attribution_generator.generate_LRP(original_image.cuda(),
@@ -90,6 +89,8 @@ def reshape_transform(tensor, height=16, width=8):
     # print(tensor.shape)# 129 64 768
     result = tensor[1:, :, :].reshape(tensor.size(1),
                                       height, width, tensor.size(2))
+    #  64 129 768
+    # print(tensor.shape)
     # result = tensor[:, 1:, :].reshape(tensor.size(0),
     #                                   width, height, tensor.size(2))
 
@@ -313,8 +314,8 @@ def do_inference(cfg,
                  val_loader,
                  num_query):
 
-    GRAD_CAM=False
-    TRANS_INTPRET=False
+    GRAD_CAM=cfg.TEST.GRADCAM
+    TRANS_INTPRET=True
 
     device = "cuda"
     logger = logging.getLogger("transreid.test")
@@ -330,8 +331,10 @@ def do_inference(cfg,
         model.to(device)
 
     model.eval()
+
     if TRANS_INTPRET:
-        attribution_generator = LRP(model)
+
+        attribution_generator = LRP(LRPmodel)
     if GRAD_CAM:
         gradcam_methods = \
             {"gradcam": GradCAM,
@@ -346,10 +349,12 @@ def do_inference(cfg,
 
     # target_layers = [model.blocks[-1].norm1]
     # torch.cat([img_feature, img_feature_proj], dim=1)
-        target_layers = [model.image_encoder.transformer.resblocks[9].ln_1,model.image_encoder.transformer.resblocks[10].ln_1,model.image_encoder.transformer.resblocks[11].ln_1]
-        # target_layers = [model.image_encoder.transformer.resblocks[10].mlp]
+    #     target_layers = [model.image_encoder.transformer.resblocks[9].ln_1,model.image_encoder.transformer.resblocks[10].ln_1,model.image_encoder.transformer.resblocks[11].ln_1]
         # target_layers = [model.image_encoder.ln_post]
         # target_layers = [model.image_encoder]
+        # target_layers = [model.image_encoder.ln_post]
+        # target_layers = [model.classifier]
+        target_layers = [model.image_encoder.transformer.resblocks[11].ln_1]
         cam = gradcam_methods['gradcam++'](model=model,
                                    target_layers=target_layers,
                                    use_cuda=True,
@@ -365,12 +370,14 @@ def do_inference(cfg,
 
     from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
     text_out_list=[]
-
+    if GRAD_CAM or TRANS_INTPRET:
+        Grad_status = EmptyContext
+    else:
+        Grad_status = torch.no_grad
     # todo 230921 prompt output save with trainset
     with open('trainset_prompt_output.txt', 'w') as train_prompts:
         for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
-            with torch.no_grad():
-            # with EmptyContext():
+            with Grad_status():
                 img = img.to(device)
                 if cfg.MODEL.SIE_CAMERA:
                     camids = camids.to(device)
@@ -387,10 +394,15 @@ def do_inference(cfg,
                 # train_prompts.writelines([text_[0][:-68]+'\n' for text_ in text_out])
 
                 # print(text_out)
+                if GRAD_CAM:
+                    feat = torch.tensor(0)  # model(img, cam_label=camids, view_label=target_view)
+                else:
+                    feat = model(img, cam_label=camids, view_label=target_view)
+
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
                 # feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)
-                feat = model(img, cam_label=camids, view_label=target_view)
+                # feat = model(img, cam_label=camids, view_label=target_view)
 
                 if TRANS_INTPRET:
                     cat = generate_visualization(img,attribution_generator)

@@ -5,7 +5,7 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-
+from model.ViT.ViT_LRP import vit_base_patch16_224 as ViT_LRP
 
 class Bottleneck(nn.Module):
     expansion = 4
@@ -239,6 +239,18 @@ class VisionTransformer(nn.Module):
 
         return x11, x12, xproj
 
+## Todo 231107 Edit relevance propagation model ViT
+class VisionTransformerLRP(VisionTransformer):
+
+    def __init__(self, h_resolution: int, w_resolution: int, patch_size: int, stride_size: int, width: int, layers: int,
+                 heads: int, output_dim: int):
+        # super().__init__(h_resolution, w_resolution, patch_size, stride_size, width, layers, heads, output_dim)
+        ## Todo 231107 Edit relevance propagation model ViT
+        ViT_LRP()
+    def forward(self, x: torch.Tensor, cv_emb=None):
+        ## Todo 231107 Edit relevance propagation model ViT
+        return super().forward(x, cv_emb)
+
 
 class CLIP(nn.Module):
     def __init__(self,
@@ -272,8 +284,9 @@ class CLIP(nn.Module):
                 width=vision_width
             )
         else:
+
             vision_heads = vision_width // 64
-            self.visual = VisionTransformer(
+            self.visual = VisionTransformerLRP(
                 h_resolution = h_resolution,
                 w_resolution = w_resolution,
                 patch_size = vision_patch_size,

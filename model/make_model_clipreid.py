@@ -3,6 +3,8 @@ import torch.nn as nn
 import numpy as np
 
 import model.clip.clip
+
+
 from .clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 _tokenizer = _Tokenizer()
 from timm.models.layers import DropPath, to_2tuple, trunc_normal_
@@ -89,6 +91,7 @@ class build_transformer(nn.Module):
         clip_model.to("cuda")
 
         self.image_encoder = clip_model.visual
+
 
         if cfg.MODEL.SIE_CAMERA and cfg.MODEL.SIE_VIEW:
             self.cv_embed = nn.Parameter(torch.zeros(camera_num * view_num, self.in_planes))

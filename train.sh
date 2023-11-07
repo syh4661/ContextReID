@@ -1,0 +1,1 @@
+python train_clipreid.py --config_file configs/person/vit_clipreid.yml

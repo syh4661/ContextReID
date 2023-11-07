@@ -20,4 +20,7 @@
 
 # 231004 Test trained model 230927
 #
+#python test_clipreid.py --config_file configs/person/vit_clipreid_msmt.yml MODEL.DIST_TRAIN False MODEL.DEVICE_ID "('0')"
+
+# 231107 Test for GradCAM ClipReID
 python test_clipreid.py --config_file configs/person/vit_clipreid_msmt.yml MODEL.DIST_TRAIN False MODEL.DEVICE_ID "('0')"
