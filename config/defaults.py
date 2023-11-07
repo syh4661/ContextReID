@@ -62,6 +62,8 @@ _C.MODEL.SIE_COE = 3.0
 _C.MODEL.SIE_CAMERA = False
 _C.MODEL.SIE_VIEW = False
 
+# LRP, Layer-wise Relevance Propagation
+_C.MODEL.LRP = ''
 # -----------------------------------------------------------------------------
 # INPUT
 # -----------------------------------------------------------------------------

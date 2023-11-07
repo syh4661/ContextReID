@@ -87,7 +87,8 @@ class build_transformer(nn.Module):
         self.h_resolution = int((cfg.INPUT.SIZE_TRAIN[0]-16)//cfg.MODEL.STRIDE_SIZE[0] + 1)
         self.w_resolution = int((cfg.INPUT.SIZE_TRAIN[1]-16)//cfg.MODEL.STRIDE_SIZE[1] + 1)
         self.vision_stride_size = cfg.MODEL.STRIDE_SIZE[0]
-        clip_model = load_clip_to_cpu(self.model_name, self.h_resolution, self.w_resolution, self.vision_stride_size)
+        # Load Clip
+        clip_model = load_clip_to_cpu(self.model_name, self.h_resolution, self.w_resolution, self.vision_stride_size,cfg.MODEL.LRP)
         clip_model.to("cuda")
 
         self.image_encoder = clip_model.visual
@@ -251,7 +252,7 @@ def make_model(cfg, num_class, camera_num, view_num):
 
 
 from .clip import clip
-def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_size):
+def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_size,model_configs):
     url = clip._MODELS[backbone_name]
     model_path = clip._download(url)
 
@@ -263,7 +264,7 @@ def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_si
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
 
-    model = clip.build_model(state_dict or model.state_dict(), h_resolution, w_resolution, vision_stride_size)
+    model = clip.build_model(state_dict or model.state_dict(), h_resolution, w_resolution, vision_stride_size,model_configs)
 
     return model
 

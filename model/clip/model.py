@@ -5,8 +5,10 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
-from model.ViT.ViT_LRP import vit_base_patch16_224 as ViT_LRP
-
+# from model.ViT.ViT_LRP import vit_base_patch16_224 as ViT_LRP
+from model.ViT.weight_init import trunc_normal_
+from model.ViT.ViT_LRP import PatchEmbedReID, Block,LayerNorm,Mlp,Linear
+from model.modules.layers_ours import IndexSelect,Add
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -148,13 +150,13 @@ class ModifiedResNet(nn.Module):
         return x3, x4, xproj 
 
 
-class LayerNorm(nn.LayerNorm):
-    """Subclass torch's LayerNorm to handle fp16."""
-
-    def forward(self, x: torch.Tensor):
-        orig_type = x.dtype
-        ret = super().forward(x.type(torch.float32))
-        return ret.type(orig_type)
+# class LayerNorm(nn.LayerNorm):
+#     """Subclass torch's LayerNorm to handle fp16."""
+#
+#     def forward(self, x: torch.Tensor):
+#         orig_type = x.dtype
+#         ret = super().forward(x.type(torch.float32))
+#         return ret.type(orig_type)
 
 
 class QuickGELU(nn.Module):
@@ -196,7 +198,7 @@ class Transformer(nn.Module):
     def forward(self, x: torch.Tensor):
         return self.resblocks(x)
 
-
+## Todo 231107 Edit relevance propagation model ViT - Original ViT of ClipReID
 class VisionTransformer(nn.Module):
     def __init__(self, h_resolution: int, w_resolution: int, patch_size: int, stride_size: int, width: int, layers: int, heads: int, output_dim: int):
         super().__init__()
@@ -206,8 +208,8 @@ class VisionTransformer(nn.Module):
         self.conv1 = nn.Conv2d(in_channels=3, out_channels=width, kernel_size=patch_size, stride=stride_size, bias=False)
 
         scale = width ** -0.5
-        self.class_embedding = nn.Parameter(scale * torch.randn(width))
-        self.positional_embedding = nn.Parameter(scale * torch.randn(h_resolution*w_resolution + 1, width))
+        self.class_embedding = nn.Parameter(scale * torch.randn(width)) # 768
+        self.positional_embedding = nn.Parameter(scale * torch.randn(h_resolution*w_resolution + 1, width)) # 129,768
         self.ln_pre = LayerNorm(width)
 
         self.transformer = Transformer(width, layers, heads)
@@ -216,40 +218,198 @@ class VisionTransformer(nn.Module):
         self.proj = nn.Parameter(scale * torch.randn(width, output_dim))
 
     def forward(self, x: torch.Tensor, cv_emb = None):
-        x = self.conv1(x)  # shape = [*, width, grid, grid]
-        x = x.reshape(x.shape[0], x.shape[1], -1)  # shape = [*, width, grid ** 2]
-        x = x.permute(0, 2, 1)  # shape = [*, grid ** 2, width]
-        x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]
-        if cv_emb != None: 
+        x = self.conv1(x)  # shape == [*, width, grid, grid] ex) [64, 3, 256, 128] -> [64, 768, 16, 8]
+        x = x.reshape(x.shape[0], x.shape[1], -1)  # shape == [*, width, grid ** 2] ex) [64, 768, 16, 8] -> [64, 768, 128]
+        x = x.permute(0, 2, 1)  # shape == [*, grid ** 2, width] ex) [64, 768, 128] -> [64, 128, 768]
+        x = torch.cat([self.class_embedding.to(x.dtype) + torch.zeros(x.shape[0], 1, x.shape[-1], dtype=x.dtype, device=x.device), x], dim=1)  # shape = [*, grid ** 2 + 1, width]ex) [64, 128, 768] -> [64, 129, 768]
+        if cv_emb != None:
             x[:,0] = x[:,0] + cv_emb
-        x = x + self.positional_embedding.to(x.dtype)
+        x = x + self.positional_embedding.to(x.dtype) # shape = [*, grid ** 2 + 1, width] ex) [64, 129, 768] -> [64, 129, 768]
         x = self.ln_pre(x)
-        
-        x = x.permute(1, 0, 2)  # NLD -> LND # grid**2+1 , batch , width
-        
-        x11 = self.transformer.resblocks[:11](x) 
-        x12 = self.transformer.resblocks[11](x11) 
-        x11 = x11.permute(1, 0, 2)  # LND -> NLD  
-        x12 = x12.permute(1, 0, 2)  # LND -> NLD  
 
-        x12 = self.ln_post(x12)  
+        x = x.permute(1, 0, 2)  # NLD -> LND # grid**2+1 , batch , width ex) [64, 129, 768] -> [129, 64, 768]
+        x11 = self.transformer.resblocks[:11](x) # [129, 64, 768]
+        x12 = self.transformer.resblocks[11](x11) # [129, 64, 768]
+        x11 = x11.permute(1, 0, 2)  # LND -> NLD ex) [64, 129, 768]
+        x12 = x12.permute(1, 0, 2)  # LND -> NLD ex) [64, 129, 768]
+
+        x12 = self.ln_post(x12)
 
         if self.proj is not None:
-            xproj = x12 @ self.proj   
-
-        return x11, x12, xproj
+            xproj = x12 @ self.proj
+        return x11, x12, xproj # torch.Size([64, 129, 768]) torch.Size([64, 129, 768]) torch.Size([64, 129, 512])
 
 ## Todo 231107 Edit relevance propagation model ViT
-class VisionTransformerLRP(VisionTransformer):
+class VisionTransformerLRP(nn.Module):
 
     def __init__(self, h_resolution: int, w_resolution: int, patch_size: int, stride_size: int, width: int, layers: int,
                  heads: int, output_dim: int):
         # super().__init__(h_resolution, w_resolution, patch_size, stride_size, width, layers, heads, output_dim)
+        super().__init__()
         ## Todo 231107 Edit relevance propagation model ViT
-        ViT_LRP()
+
+        self.h_resolution = h_resolution # 16
+        self.w_resolution = w_resolution # 8
+        self.output_dim = output_dim # 512
+
+        # self.conv1 = nn.Conv2d(in_channels=3, out_channels=width, kernel_size=patch_size, stride=stride_size, bias=False)
+        # scale = width ** -0.5 # 768 ** -0.5
+        # self.class_embedding = nn.Parameter(scale * torch.randn(width)) # 768
+        # self.positional_embedding = nn.Parameter(scale * torch.randn(h_resolution*w_resolution + 1, width)) # 129 * 768
+
+
+        # FIXME img_size to be generalized
+        self.patch_embed = PatchEmbedReID(
+                img_size=256, patch_size=patch_size, in_chans=3, embed_dim=width)
+        num_patches = self.patch_embed.num_patches
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, width))
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, width))
+
+        # self.ln_pre = LayerNorm(width) # 768
+        mlp_ratio = 4
+        qkv_bias = True
+        attn_drop_rate = 0.
+        drop_rate=0.
+
+        self.blocks = nn.ModuleList([
+            Block(
+                dim=width, num_heads=heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
+                drop=drop_rate, attn_drop=attn_drop_rate)
+            for i in range(layers)])
+        # self.transformer = TransformerLRP(width, layers, heads)
+        # self.ln_post = LayerNorm(width) # 768
+        mlp_head=False
+        self.norm = LayerNorm(width)
+        if mlp_head:
+            # paper diagram suggests 'MLP head', but results in 4M extra parameters vs paper
+            self.head = Mlp(width, int(width * mlp_ratio), output_dim)
+        else:
+            # with a single Linear layer as head, the param count within rounding of paper
+            self.head = Linear(width, output_dim)
+
+        # self.proj = nn.Parameter(scale * torch.randn(width, output_dim)) # 768 * 512
+
+        trunc_normal_(self.pos_embed, std=.02)  # embeddings same as weights?
+        trunc_normal_(self.cls_token, std=.02)
+        self.apply(self._init_weights)
+
+        self.pool = IndexSelect()
+        self.add = Add()
+
+        self.inp_grad = None
+
+    def save_inp_grad(self,grad):
+        self.inp_grad = grad
+
+    def _init_weights(self, m):
+        if isinstance(m, nn.Linear):
+            trunc_normal_(m.weight, std=.02)
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                nn.init.constant_(m.bias, 0)
+        elif isinstance(m, nn.LayerNorm):
+            nn.init.constant_(m.bias, 0)
+            nn.init.constant_(m.weight, 1.0)
+    def no_weight_decay(self):
+        return {'pos_embed', 'cls_token'}
+
     def forward(self, x: torch.Tensor, cv_emb=None):
         ## Todo 231107 Edit relevance propagation model ViT
-        return super().forward(x, cv_emb)
+        B = x.shape[0]
+        x = self.patch_embed(x)
+        x = self.norm(x)
+
+        # x = x.permute(1, 0, 2)  # NLD -> LND # grid**2+1 , batch , width
+
+        x11 = self.blocks[:11](x)
+        x12 = self.blocks[11](x11)
+
+        # x11 = x11.permute(1, 0, 2)  # LND -> NLD
+        # x12 = x12.permute(1, 0, 2)  # LND -> NLD
+
+        x12 = self.norm(x12)
+
+        if self.proj is not None:
+            xproj = x12 @ self.proj
+        xproj = self.pool(x12, dim=1, indices=torch.tensor(0, device=x.device))
+        xproj = xproj.squeeze(1)
+        xproj = self.head(xproj)
+        return x11, x12, xproj
+
+    def relprop(self, cam=None, method="transformer_attribution", is_ablation=False, start_layer=0, **kwargs):
+        # print(kwargs)
+        # print("conservation 1", cam.sum())
+        cam = self.head.relprop(cam, **kwargs)
+        cam = cam.unsqueeze(1)
+        cam = self.pool.relprop(cam, **kwargs)
+        cam = self.norm.relprop(cam, **kwargs)
+        for blk in reversed(self.blocks):
+            cam = blk.relprop(cam, **kwargs)
+
+        # print("conservation 2", cam.sum())
+        # print("min", cam.min())
+
+        if method == "full":
+            (cam, _) = self.add.relprop(cam, **kwargs)
+            cam = cam[:, 1:]
+            cam = self.patch_embed.relprop(cam, **kwargs)
+            # sum on channels
+            cam = cam.sum(dim=1)
+            return cam
+
+        elif method == "rollout":
+            # cam rollout
+            attn_cams = []
+            for blk in self.blocks:
+                attn_heads = blk.attn.get_attn_cam().clamp(min=0)
+                avg_heads = (attn_heads.sum(dim=1) / attn_heads.shape[1]).detach()
+                attn_cams.append(avg_heads)
+            cam = compute_rollout_attention(attn_cams, start_layer=start_layer)
+            cam = cam[:, 0, 1:]
+            return cam
+
+        # our method, method name grad is legacy
+        elif method == "transformer_attribution" or method == "grad":
+            cams = []
+            for blk in self.blocks:
+                grad = blk.attn.get_attn_gradients()
+                cam = blk.attn.get_attn_cam()
+                cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
+                grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
+                cam = grad * cam
+                cam = cam.clamp(min=0).mean(dim=0)
+                cams.append(cam.unsqueeze(0))
+            rollout = compute_rollout_attention(cams, start_layer=start_layer)
+            cam = rollout[:, 0, 1:]
+            return cam
+
+        elif method == "last_layer":
+            cam = self.blocks[-1].attn.get_attn_cam()
+            cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
+            if is_ablation:
+                grad = self.blocks[-1].attn.get_attn_gradients()
+                grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
+                cam = grad * cam
+            cam = cam.clamp(min=0).mean(dim=0)
+            cam = cam[0, 1:]
+            return cam
+
+        elif method == "last_layer_attn":
+            cam = self.blocks[-1].attn.get_attn()
+            cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
+            cam = cam.clamp(min=0).mean(dim=0)
+            cam = cam[0, 1:]
+            return cam
+
+        elif method == "second_layer":
+            cam = self.blocks[1].attn.get_attn_cam()
+            cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
+            if is_ablation:
+                grad = self.blocks[1].attn.get_attn_gradients()
+                grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
+                cam = grad * cam
+            cam = cam.clamp(min=0).mean(dim=0)
+            cam = cam[0, 1:]
+            return cam
 
 
 class CLIP(nn.Module):
@@ -268,7 +428,8 @@ class CLIP(nn.Module):
                  transformer_heads: int,
                  transformer_layers: int,
                  h_resolution: int, 
-                 w_resolution: int
+                 w_resolution: int,
+                 model_configs: str,
                  ):
         super().__init__()
 
@@ -283,8 +444,7 @@ class CLIP(nn.Module):
                 input_resolution=h_resolution*w_resolution,
                 width=vision_width
             )
-        else:
-
+        elif model_configs=="LRP":
             vision_heads = vision_width // 64
             self.visual = VisionTransformerLRP(
                 h_resolution = h_resolution,
@@ -296,7 +456,18 @@ class CLIP(nn.Module):
                 heads=vision_heads,
                 output_dim=embed_dim
             )
-            
+        else:
+            vision_heads = vision_width // 64
+            self.visual = VisionTransformer(
+                h_resolution = h_resolution,
+                w_resolution = w_resolution,
+                patch_size = vision_patch_size,
+                stride_size = vision_stride_size,
+                width=vision_width,
+                layers=vision_layers,
+                heads=vision_heads,
+                output_dim=embed_dim
+            )
         self.transformer = Transformer(
             width=transformer_width,
             layers=transformer_layers,
@@ -412,7 +583,7 @@ def convert_weights(model: nn.Module):
     model.apply(_convert_weights_to_fp16)
 
 
-def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_stride_size: int):
+def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_stride_size: int,model_configs:str):
     vit = "visual.proj" in state_dict
 
     if vit:
@@ -441,7 +612,7 @@ def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_s
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size, vision_stride_size,
         context_length, vocab_size, transformer_width, transformer_heads, transformer_layers,
-        h_resolution, w_resolution
+        h_resolution, w_resolution,model_configs
     )
     if vit:
         state_dict["visual.positional_embedding"] = resize_pos_embed(state_dict["visual.positional_embedding"], model.visual.positional_embedding, h_resolution, w_resolution)

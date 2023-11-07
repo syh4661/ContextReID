@@ -315,7 +315,7 @@ def do_inference(cfg,
                  num_query):
 
     GRAD_CAM=cfg.TEST.GRADCAM
-    TRANS_INTPRET=True
+    TRANS_INTPRET=False
 
     device = "cuda"
     logger = logging.getLogger("transreid.test")
@@ -333,7 +333,6 @@ def do_inference(cfg,
     model.eval()
 
     if TRANS_INTPRET:
-
         attribution_generator = LRP(LRPmodel)
     if GRAD_CAM:
         gradcam_methods = \
