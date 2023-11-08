@@ -30,7 +30,18 @@ from pytorch_grad_cam.utils.image import show_cam_on_image, \
 from pytorch_grad_cam.ablation_layer import AblationLayerVit
 
 from utils.visualization.ViT_explanation_generator import LRP
+#
+from utils.visualization.Clip_explain import interpret_keti,show_image_relevance, show_heatmap_on_text,show_image_relevance_reid
 
+from utils.visualization.ViT_explain import generate_relevance
+
+
+class EmptyContext:
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass
 def generate_visualization(original_image, attribution_generator,class_index=None):
     transformer_attribution = attribution_generator.generate_LRP(original_image.cuda(),
                                                                  method="transformer_attribution",
@@ -205,8 +216,13 @@ def do_train_stage2(cfg,
                 target_view = target_view.to(device)
             else:
                 target_view = None
+
             with amp.autocast(enabled=True):
                 score, feat, image_features = model(x = img, label = target, cam_label=target_cam, view_label=target_view)
+                for i in range(batch_size):
+                    # show_heatmap_on_text(texts[i], text[i], R_text[i])
+                    show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
+                    plt.show()
                 if len(items)==5:
                     ## Todo 230926 make max pooling in solo-clustered
                     text_features_ = torch.cat((text_features, text_features_cluster), dim=0)
@@ -218,6 +234,8 @@ def do_train_stage2(cfg,
 
                 else:
                     logits = image_features @ text_features.t()
+
+
                 loss = loss_fn(score, feat, target, target_cam, logits)
 
             scaler.scale(loss).backward()
@@ -285,7 +303,7 @@ def do_train_stage2(cfg,
             else:
                 model.eval()
                 for n_iter, (img, vid, camid, camids, target_view, _) in enumerate(val_loader):
-                    with torch.no_grad():
+                    with EmptyContext():
                         img = img.to(device)
                         if cfg.MODEL.SIE_CAMERA:
                             camids = camids.to(device)
@@ -296,6 +314,10 @@ def do_train_stage2(cfg,
                         else: 
                             target_view = None
                         feat = model(img, cam_label=camids, view_label=target_view)
+                        texts = ["a man with eyeglasses"]
+                        text = model.tokenizer(texts).to(device)
+                        R_image = model.interpret_keti(img, text, device, -1, -1)
+                        show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
                         evaluator.update((feat, vid, camid))
                 cmc, mAP, _, _, _, _, _ = evaluator.compute()
                 logger.info("Validation Results - Epoch: {}".format(epoch))
@@ -360,13 +382,6 @@ def do_inference(cfg,
                                    reshape_transform=reshape_transform)
         cam.batch_size = cfg.TEST.IMS_PER_BATCH
 
-
-    class EmptyContext:
-        def __enter__(self):
-            pass
-        def __exit__(self, exc_type, exc_value, traceback):
-            pass
-
     from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
     text_out_list=[]
     if GRAD_CAM or TRANS_INTPRET:
@@ -374,6 +389,9 @@ def do_inference(cfg,
     else:
         Grad_status = torch.no_grad
     # todo 230921 prompt output save with trainset
+
+
+
     with open('trainset_prompt_output.txt', 'w') as train_prompts:
         for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
             with Grad_status():
@@ -397,7 +415,13 @@ def do_inference(cfg,
                     feat = torch.tensor(0)  # model(img, cam_label=camids, view_label=target_view)
                 else:
                     feat = model(img, cam_label=camids, view_label=target_view)
-
+                texts = ["a man with eyeglasses"]
+                text = model.tokenizer(texts).to(device)
+                R_image = model.interpret_(img, text, device, -1, -1)
+                for i in range(img.shape[0]):
+                    # show_heatmap_on_text(texts[i], text[i], R_text[i])
+                    show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i])))
+                    plt.show()
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
                 # feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)

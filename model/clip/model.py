@@ -5,10 +5,14 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch import nn
+
 # from model.ViT.ViT_LRP import vit_base_patch16_224 as ViT_LRP
 from model.ViT.weight_init import trunc_normal_
 from model.ViT.ViT_LRP import PatchEmbedReID, Block,LayerNorm,Mlp,Linear
 from model.modules.layers_ours import IndexSelect,Add
+
+from model.clip.auxilary import *
+
 class Bottleneck(nn.Module):
     expansion = 4
 
@@ -69,7 +73,7 @@ class AttentionPool2d(nn.Module):
         x = x.reshape(x.shape[0], x.shape[1], x.shape[2] * x.shape[3]).permute(2, 0, 1)  # NCHW -> (HW)NC  #32,2048,7,7 ->49, 32, 2048
         x = torch.cat([x.mean(dim=0, keepdim=True), x], dim=0)  # (HW+1)NC  50,32,2048
         x = x + self.positional_embedding[:, None, :].to(x.dtype)  # (HW+1)NC
-        x, _ = F.multi_head_attention_forward(
+        x, _ = multi_head_attention_forward(
             query=x, key=x, value=x,
             embed_dim_to_check=x.shape[-1],
             num_heads=self.num_heads,
@@ -89,7 +93,8 @@ class AttentionPool2d(nn.Module):
             need_weights=False
         ) 
 
-        return x 
+        return x[0]
+
 
 class ModifiedResNet(nn.Module):
     """
@@ -132,7 +137,7 @@ class ModifiedResNet(nn.Module):
 
         return nn.Sequential(*layers)
 
-    def forward(self, x): 
+    def forward(self, x):
         def stem(x):
             for conv, bn in [(self.conv1, self.bn1), (self.conv2, self.bn2), (self.conv3, self.bn3)]:
                 x = self.relu(bn(conv(x)))
@@ -150,13 +155,13 @@ class ModifiedResNet(nn.Module):
         return x3, x4, xproj 
 
 
-# class LayerNorm(nn.LayerNorm):
-#     """Subclass torch's LayerNorm to handle fp16."""
-#
-#     def forward(self, x: torch.Tensor):
-#         orig_type = x.dtype
-#         ret = super().forward(x.type(torch.float32))
-#         return ret.type(orig_type)
+class LayerNorm(nn.LayerNorm):
+    """Subclass torch's LayerNorm to handle fp16."""
+
+    def forward(self, x: torch.Tensor):
+        orig_type = x.dtype
+        ret = super().forward(x.type(torch.float32))
+        return ret.type(orig_type)
 
 
 class QuickGELU(nn.Module):
@@ -168,7 +173,7 @@ class ResidualAttentionBlock(nn.Module):
     def __init__(self, d_model: int, n_head: int, attn_mask: torch.Tensor = None):
         super().__init__()
 
-        self.attn = nn.MultiheadAttention(d_model, n_head)
+        self.attn = MultiheadAttention(d_model, n_head)
         self.ln_1 = LayerNorm(d_model)
         self.mlp = nn.Sequential(OrderedDict([
             ("c_fc", nn.Linear(d_model, d_model * 4)),
@@ -178,9 +183,19 @@ class ResidualAttentionBlock(nn.Module):
         self.ln_2 = LayerNorm(d_model)
         self.attn_mask = attn_mask
 
+        self.attn_probs = None
+        self.attn_grad = None
+
+    def set_attn_probs(self, attn_probs):
+        self.attn_probs = attn_probs
+
+    def set_attn_grad(self, attn_grad):
+        self.attn_grad = attn_grad
+
     def attention(self, x: torch.Tensor):
         self.attn_mask = self.attn_mask.to(dtype=x.dtype, device=x.device) if self.attn_mask is not None else None
-        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask)[0]
+        return self.attn(x, x, x, need_weights=False, attn_mask=self.attn_mask, attention_probs_forward_hook=self.set_attn_probs,
+                         attention_probs_backwards_hook=self.set_attn_grad)[0]
 
     def forward(self, x: torch.Tensor):
         x = x + self.attention(self.ln_1(x))
@@ -240,176 +255,7 @@ class VisionTransformer(nn.Module):
         return x11, x12, xproj # torch.Size([64, 129, 768]) torch.Size([64, 129, 768]) torch.Size([64, 129, 512])
 
 ## Todo 231107 Edit relevance propagation model ViT
-class VisionTransformerLRP(nn.Module):
 
-    def __init__(self, h_resolution: int, w_resolution: int, patch_size: int, stride_size: int, width: int, layers: int,
-                 heads: int, output_dim: int):
-        # super().__init__(h_resolution, w_resolution, patch_size, stride_size, width, layers, heads, output_dim)
-        super().__init__()
-        ## Todo 231107 Edit relevance propagation model ViT
-
-        self.h_resolution = h_resolution # 16
-        self.w_resolution = w_resolution # 8
-        self.output_dim = output_dim # 512
-
-        # self.conv1 = nn.Conv2d(in_channels=3, out_channels=width, kernel_size=patch_size, stride=stride_size, bias=False)
-        # scale = width ** -0.5 # 768 ** -0.5
-        # self.class_embedding = nn.Parameter(scale * torch.randn(width)) # 768
-        # self.positional_embedding = nn.Parameter(scale * torch.randn(h_resolution*w_resolution + 1, width)) # 129 * 768
-
-
-        # FIXME img_size to be generalized
-        self.patch_embed = PatchEmbedReID(
-                img_size=256, patch_size=patch_size, in_chans=3, embed_dim=width)
-        num_patches = self.patch_embed.num_patches
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, width))
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, width))
-
-        # self.ln_pre = LayerNorm(width) # 768
-        mlp_ratio = 4
-        qkv_bias = True
-        attn_drop_rate = 0.
-        drop_rate=0.
-
-        self.blocks = nn.ModuleList([
-            Block(
-                dim=width, num_heads=heads, mlp_ratio=mlp_ratio, qkv_bias=qkv_bias,
-                drop=drop_rate, attn_drop=attn_drop_rate)
-            for i in range(layers)])
-        # self.transformer = TransformerLRP(width, layers, heads)
-        # self.ln_post = LayerNorm(width) # 768
-        mlp_head=False
-        self.norm = LayerNorm(width)
-        if mlp_head:
-            # paper diagram suggests 'MLP head', but results in 4M extra parameters vs paper
-            self.head = Mlp(width, int(width * mlp_ratio), output_dim)
-        else:
-            # with a single Linear layer as head, the param count within rounding of paper
-            self.head = Linear(width, output_dim)
-
-        # self.proj = nn.Parameter(scale * torch.randn(width, output_dim)) # 768 * 512
-
-        trunc_normal_(self.pos_embed, std=.02)  # embeddings same as weights?
-        trunc_normal_(self.cls_token, std=.02)
-        self.apply(self._init_weights)
-
-        self.pool = IndexSelect()
-        self.add = Add()
-
-        self.inp_grad = None
-
-    def save_inp_grad(self,grad):
-        self.inp_grad = grad
-
-    def _init_weights(self, m):
-        if isinstance(m, nn.Linear):
-            trunc_normal_(m.weight, std=.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
-                nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
-    def no_weight_decay(self):
-        return {'pos_embed', 'cls_token'}
-
-    def forward(self, x: torch.Tensor, cv_emb=None):
-        ## Todo 231107 Edit relevance propagation model ViT
-        B = x.shape[0]
-        x = self.patch_embed(x)
-        x = self.norm(x)
-
-        # x = x.permute(1, 0, 2)  # NLD -> LND # grid**2+1 , batch , width
-
-        x11 = self.blocks[:11](x)
-        x12 = self.blocks[11](x11)
-
-        # x11 = x11.permute(1, 0, 2)  # LND -> NLD
-        # x12 = x12.permute(1, 0, 2)  # LND -> NLD
-
-        x12 = self.norm(x12)
-
-        if self.proj is not None:
-            xproj = x12 @ self.proj
-        xproj = self.pool(x12, dim=1, indices=torch.tensor(0, device=x.device))
-        xproj = xproj.squeeze(1)
-        xproj = self.head(xproj)
-        return x11, x12, xproj
-
-    def relprop(self, cam=None, method="transformer_attribution", is_ablation=False, start_layer=0, **kwargs):
-        # print(kwargs)
-        # print("conservation 1", cam.sum())
-        cam = self.head.relprop(cam, **kwargs)
-        cam = cam.unsqueeze(1)
-        cam = self.pool.relprop(cam, **kwargs)
-        cam = self.norm.relprop(cam, **kwargs)
-        for blk in reversed(self.blocks):
-            cam = blk.relprop(cam, **kwargs)
-
-        # print("conservation 2", cam.sum())
-        # print("min", cam.min())
-
-        if method == "full":
-            (cam, _) = self.add.relprop(cam, **kwargs)
-            cam = cam[:, 1:]
-            cam = self.patch_embed.relprop(cam, **kwargs)
-            # sum on channels
-            cam = cam.sum(dim=1)
-            return cam
-
-        elif method == "rollout":
-            # cam rollout
-            attn_cams = []
-            for blk in self.blocks:
-                attn_heads = blk.attn.get_attn_cam().clamp(min=0)
-                avg_heads = (attn_heads.sum(dim=1) / attn_heads.shape[1]).detach()
-                attn_cams.append(avg_heads)
-            cam = compute_rollout_attention(attn_cams, start_layer=start_layer)
-            cam = cam[:, 0, 1:]
-            return cam
-
-        # our method, method name grad is legacy
-        elif method == "transformer_attribution" or method == "grad":
-            cams = []
-            for blk in self.blocks:
-                grad = blk.attn.get_attn_gradients()
-                cam = blk.attn.get_attn_cam()
-                cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
-                grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
-                cam = grad * cam
-                cam = cam.clamp(min=0).mean(dim=0)
-                cams.append(cam.unsqueeze(0))
-            rollout = compute_rollout_attention(cams, start_layer=start_layer)
-            cam = rollout[:, 0, 1:]
-            return cam
-
-        elif method == "last_layer":
-            cam = self.blocks[-1].attn.get_attn_cam()
-            cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
-            if is_ablation:
-                grad = self.blocks[-1].attn.get_attn_gradients()
-                grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
-                cam = grad * cam
-            cam = cam.clamp(min=0).mean(dim=0)
-            cam = cam[0, 1:]
-            return cam
-
-        elif method == "last_layer_attn":
-            cam = self.blocks[-1].attn.get_attn()
-            cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
-            cam = cam.clamp(min=0).mean(dim=0)
-            cam = cam[0, 1:]
-            return cam
-
-        elif method == "second_layer":
-            cam = self.blocks[1].attn.get_attn_cam()
-            cam = cam[0].reshape(-1, cam.shape[-1], cam.shape[-1])
-            if is_ablation:
-                grad = self.blocks[1].attn.get_attn_gradients()
-                grad = grad[0].reshape(-1, grad.shape[-1], grad.shape[-1])
-                cam = grad * cam
-            cam = cam.clamp(min=0).mean(dim=0)
-            cam = cam[0, 1:]
-            return cam
 
 
 class CLIP(nn.Module):
@@ -434,7 +280,7 @@ class CLIP(nn.Module):
         super().__init__()
 
         self.context_length = context_length
-
+        self.model_configs=model_configs
         if isinstance(vision_layers, (tuple, list)):
             vision_heads = vision_width * 32 // 64
             self.visual = ModifiedResNet(
@@ -443,18 +289,6 @@ class CLIP(nn.Module):
                 heads=vision_heads,
                 input_resolution=h_resolution*w_resolution,
                 width=vision_width
-            )
-        elif model_configs=="LRP":
-            vision_heads = vision_width // 64
-            self.visual = VisionTransformerLRP(
-                h_resolution = h_resolution,
-                w_resolution = w_resolution,
-                patch_size = vision_patch_size,
-                stride_size = vision_stride_size,
-                width=vision_width,
-                layers=vision_layers,
-                heads=vision_heads,
-                output_dim=embed_dim
             )
         else:
             vision_heads = vision_width // 64
@@ -529,16 +363,18 @@ class CLIP(nn.Module):
     def encode_image(self, image):
         return self.visual(image.type(self.dtype))
 
-    def encode_text(self, text): 
-        x = self.token_embedding(text).type(self.dtype)  
+    def encode_text(self, text):
+        x = self.token_embedding(text).type(self.dtype)  # [batch_size, n_ctx, d_model]
 
-        x = x + self.positional_embedding.type(self.dtype) 
-        x = x.permute(1, 0, 2)  
-        x = self.transformer(x) 
-        x = x.permute(1, 0, 2)  
-        x = self.ln_final(x).type(self.dtype) 
+        x = x + self.positional_embedding.type(self.dtype)
+        x = x.permute(1, 0, 2)  # NLD -> LND
+        x = self.transformer(x)
+        x = x.permute(1, 0, 2)  # LND -> NLD
+        x = self.ln_final(x).type(self.dtype)
 
-        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection 
+        # x.shape = [batch_size, n_ctx, transformer.width]
+        # take features from the eot embedding (eot_token is the highest number in each sequence)
+        x = x[torch.arange(x.shape[0]), text.argmax(dim=-1)] @ self.text_projection
 
         return x
 
@@ -568,7 +404,7 @@ def convert_weights(model: nn.Module):
             if l.bias is not None:
                 l.bias.data = l.bias.data.float()
 
-        if isinstance(l, nn.MultiheadAttention):
+        if isinstance(l, MultiheadAttention):
             for attr in [*[f"{s}_proj_weight" for s in ["in", "q", "k", "v"]], "in_proj_bias", "bias_k", "bias_v"]:
                 tensor = getattr(l, attr)
                 if tensor is not None:
@@ -583,7 +419,7 @@ def convert_weights(model: nn.Module):
     model.apply(_convert_weights_to_fp16)
 
 
-def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_stride_size: int,model_configs:str):
+def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_stride_size: int,model_configs:str = ''):
     vit = "visual.proj" in state_dict
 
     if vit:
@@ -614,8 +450,14 @@ def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_s
         context_length, vocab_size, transformer_width, transformer_heads, transformer_layers,
         h_resolution, w_resolution,model_configs
     )
-    if vit:
-        state_dict["visual.positional_embedding"] = resize_pos_embed(state_dict["visual.positional_embedding"], model.visual.positional_embedding, h_resolution, w_resolution)
+    if model_configs=='LRP':
+        state_dict["visual.pos_embed"] = resize_pos_embed(state_dict["visual.positional_embedding"],
+                                                          model.visual.pos_embed, h_resolution,
+                                                          w_resolution)
+    elif vit :
+        state_dict["visual.positional_embedding"] = resize_pos_embed(state_dict["visual.positional_embedding"],
+                                                                     model.visual.positional_embedding, h_resolution,
+                                                                     w_resolution)
     else: #RN50
         state_dict["visual.attnpool.positional_embedding"] = resize_pos_embed(state_dict["visual.attnpool.positional_embedding"], model.visual.attnpool.positional_embedding, h_resolution, w_resolution)
     
@@ -623,10 +465,10 @@ def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_s
     for key in ["input_resolution", "context_length", "vocab_size"]:
         if key in state_dict:
             del state_dict[key]
-            
-    convert_weights(model)
 
+    convert_weights(model)
     model.load_state_dict(state_dict)
+
     return model.eval()
 
 import math

@@ -82,6 +82,21 @@ def available_models() -> List[str]:
     """Returns the names of available CLIP models"""
     return list(_MODELS.keys())
 
+def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_size,model_configs):
+    url = _MODELS[backbone_name]
+    model_path = _download(url)
+
+    try:
+        # loading JIT archive
+        model = torch.jit.load(model_path, map_location="cpu").eval()
+        state_dict = None
+
+    except RuntimeError:
+        state_dict = torch.load(model_path, map_location="cpu")
+
+    model = build_model(state_dict or model.state_dict(), h_resolution, w_resolution, vision_stride_size,model_configs).to("cuda")
+
+    return model, _transform(224)
 
 def load(name: str, device: Union[str, torch.device] = "cuda" if torch.cuda.is_available() else "cpu", jit=False):
     """Load a CLIP model

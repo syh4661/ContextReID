@@ -83,14 +83,15 @@ if __name__ == '__main__':
             args.local_rank
         )
     else:
-        do_train_stage1(
-            cfg,
-            model,
-            train_loader_stage1,
-            optimizer_1stage,
-            scheduler_1stage,
-            args.local_rank
-        )
+        pass
+        # do_train_stage1(
+        #     cfg,
+        #     model,
+        #     train_loader_stage1,
+        #     optimizer_1stage,
+        #     scheduler_1stage,
+        #     args.local_rank
+        # )
 
     optimizer_2stage, optimizer_center_2stage = make_optimizer_2stage(cfg, model, center_criterion)
     scheduler_2stage = WarmupMultiStepLR(optimizer_2stage, cfg.SOLVER.STAGE2.STEPS, cfg.SOLVER.STAGE2.GAMMA, cfg.SOLVER.STAGE2.WARMUP_FACTOR,

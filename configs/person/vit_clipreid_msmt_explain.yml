@@ -68,7 +68,7 @@ TEST:
   WEIGHT: '/media/syh/hdd/checkpoints/CLIP_ReID_KETI/ViT-B-16_60.pth'
   NECK_FEAT: 'before'
   FEAT_NORM: 'yes'
-  GRADCAM : True
+  GRADCAM : False
 DATASETS:
 #   NAMES: ('market1501')
 #   ROOT_DIR: ('')

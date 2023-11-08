@@ -112,13 +112,77 @@ class build_transformer(nn.Module):
             self.prompt_learner = PromptLearnerCluster(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
         else :
             self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
-
+        self.tokenizer = clip.tokenize
         self.text_encoder = TextEncoder(clip_model)
 
         self.token_embedding = clip_model.token_embedding
+
         self.unembedder = clip.unembedding
         self.untokenizer = clip.untokenize
 
+    def interpret_(self,image, texts, device, start_layer, start_layer_text):
+        batch_size = image.shape[0]
+        images = image.repeat(batch_size, 1, 1, 1)
+
+        logits_per_image = self.classifier(self.forward(images)[:,:self.classifier.weight.shape[1]])
+        # logits_per_text = self.text_encoder(texts)
+
+        probs = logits_per_image.softmax(dim=-1).detach().cpu().numpy()
+        index = [i for i in range(batch_size)]
+
+        one_hot = np.zeros((logits_per_image.shape[0], logits_per_image.shape[1]), dtype=np.float32)
+        one_hot[torch.arange(logits_per_image.shape[0]), index] = 1
+        one_hot = torch.from_numpy(one_hot).requires_grad_(True)
+        one_hot = torch.sum(one_hot.cuda() * logits_per_image)
+
+        self.image_encoder.zero_grad()
+        self.text_encoder.zero_grad()
+
+        image_attn_blocks = list(dict(self.image_encoder.transformer.resblocks.named_children()).values())
+
+        if start_layer == -1:
+            # calculate index of last layer
+            start_layer = len(image_attn_blocks) - 1
+
+        num_tokens = image_attn_blocks[0].attn_probs.shape[-1]
+        R = torch.eye(num_tokens, num_tokens, dtype=image_attn_blocks[0].attn_probs.dtype).to(device)
+        R = R.unsqueeze(0).expand(batch_size, num_tokens, num_tokens)
+        for i, blk in enumerate(image_attn_blocks):
+            if i < start_layer:
+                continue
+            grad = torch.autograd.grad(one_hot, [blk.attn_probs], retain_graph=True)[0].detach()
+            cam = blk.attn_probs.detach()
+            cam = cam.reshape(-1, cam.shape[-1], cam.shape[-1])
+            grad = grad.reshape(-1, grad.shape[-1], grad.shape[-1])
+            cam = grad * cam
+            cam = cam.reshape(batch_size, -1, cam.shape[-1], cam.shape[-1])
+            cam = cam.clamp(min=0).mean(dim=1)
+            R = R + torch.bmm(cam, R)
+        image_relevance = R[:, 0, 1:]
+
+        # text_attn_blocks = list(dict(self.text_encoder.resblocks.named_children()).values())
+        #
+        # if start_layer_text == -1:
+        #     # calculate index of last layer
+        #     start_layer_text = len(text_attn_blocks) - 1
+        #
+        # num_tokens = text_attn_blocks[0].attn_probs.shape[-1]
+        # R_text = torch.eye(num_tokens, num_tokens, dtype=text_attn_blocks[0].attn_probs.dtype).to(device)
+        # R_text = R_text.unsqueeze(0).expand(batch_size, num_tokens, num_tokens)
+        # for i, blk in enumerate(text_attn_blocks):
+        #     if i < start_layer_text:
+        #         continue
+        #     grad = torch.autograd.grad(one_hot, [blk.attn_probs], retain_graph=True)[0].detach()
+        #     cam = blk.attn_probs.detach()
+        #     cam = cam.reshape(-1, cam.shape[-1], cam.shape[-1])
+        #     grad = grad.reshape(-1, grad.shape[-1], grad.shape[-1])
+        #     cam = grad * cam
+        #     cam = cam.reshape(batch_size, -1, cam.shape[-1], cam.shape[-1])
+        #     cam = cam.clamp(min=0).mean(dim=1)
+        #     R_text = R_text + torch.bmm(cam, R_text)
+        # text_relevance = R_text
+
+        return image_relevance
     def forward(self, x = None, label=None, get_image = False, get_text = False, cam_label= None, view_label=None):
         if get_text == True:
             prompts = self.prompt_learner(label)
