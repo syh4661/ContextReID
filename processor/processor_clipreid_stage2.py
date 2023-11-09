@@ -221,7 +221,7 @@ def do_train_stage2(cfg,
                 score, feat, image_features = model(x = img, label = target, cam_label=target_cam, view_label=target_view)
                 for i in range(batch_size):
                     # show_heatmap_on_text(texts[i], text[i], R_text[i])
-                    show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
+                    img_grad=show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
                     plt.show()
                 if len(items)==5:
                     ## Todo 230926 make max pooling in solo-clustered
@@ -418,10 +418,11 @@ def do_inference(cfg,
                 texts = ["a man with eyeglasses"]
                 text = model.tokenizer(texts).to(device)
                 R_image = model.interpret_(img, text, device, -1, -1)
+                img_grad_list=[]
                 for i in range(img.shape[0]):
                     # show_heatmap_on_text(texts[i], text[i], R_text[i])
-                    show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i])))
-                    plt.show()
+                    img_grad_list.append(show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]))))
+                    # plt.show()
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
                 # feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)
@@ -441,28 +442,21 @@ def do_inference(cfg,
                 # img_path_list.extend(imgpath)
                 if GRAD_CAM:
                     targets_cam =None
-                    # if cfg.DATASETS.NAMES == 'msmt17':
-                    #     targets_cam = [ClassifierOutputTarget(int(imgpath[i][:4])) for i in range(cfg.TEST.IMS_PER_BATCH)]
-                    # else:
-                    #     targets_cam = [ClassifierOutputTarget(tar_) for tar_ in
-                    #                    torch.argmax(model.classifier(feat[:, :768]), dim=1)]
-                    grayscale_cam = cam(input_tensor=img,
-                                        targets=targets_cam,
-                                        eigen_smooth=False,
-                                        aug_smooth=False)
                     for i in range(len(imgpath)):
-                        grayscale_cam_ = grayscale_cam[i, :]
+                        grayscale_cam_ = img_grad_list[i]
                         # rgb_img = Image.open().convert('RGB')
-                        if cfg.DATASETS.NAMES=='msmt17':
-                            rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]), 1)[:, :,::-1]
-                        else:
-                            rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MUF_KETI/bounding_box_train",imgpath[i]), 1)[:, :, ::-1]
-                        rgb_img = cv2.resize(rgb_img, (128, 256))
-                        rgb_img = np.float32(rgb_img) / 255
+                        # if cfg.DATASETS.NAMES=='msmt17':
+                        #     rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]), 1)[:, :,::-1]
+                        # else:
+                        #     rgb_img = cv2.imread(os.path.join("/media/syh/ssd2/data/ReID/MUF_KETI/bounding_box_train",imgpath[i]), 1)[:, :, ::-1]
+                        # rgb_img = cv2.resize(rgb_img, (128, 256))
+                        # rgb_img = np.float32(rgb_img) / 255
 
-                        cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
+                        # cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
                         save_name = imgpath[i].split('.')[0]+'_grad'+'.jpg'
-                        cv2.imwrite(os.path.join('/media/syh/ssd2/data/ReID/MSMT17/query_ClipReID_output_grad',save_name), cam_image)
+                        save_path = os.path.join('/media/syh/ssd2/data/ReID/MSMT17/query_ClipReID_output_grad',save_name)
+                        # cv2.imwrite(save_path, grayscale_cam_)
+                        grayscale_cam_.savefig(save_path)
 
         # todo 230921 make msmt trainset validation
         cmc, mAP, _, _, _, _, _ = evaluator.compute()

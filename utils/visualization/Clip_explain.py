@@ -184,7 +184,8 @@ def show_image_relevance_reid(image_relevance, image, orig_image):
     vis = cv2.cvtColor(np.array(vis), cv2.COLOR_RGB2BGR)
     axs[1].imshow(vis);
     axs[1].axis('off');
-    plt.show()
+    # plt.show()
+    return plt.gcf()
 
 from model.clip.simple_tokenizer import SimpleTokenizer as _Tokenizer
 _tokenizer = _Tokenizer()

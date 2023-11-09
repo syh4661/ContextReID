@@ -62,7 +62,7 @@ SOLVER:
   
 TEST:
   EVAL: True
-  IMS_PER_BATCH: 64
+  IMS_PER_BATCH: 1
   RE_RANKING: False
 #  WEIGHT: '/media/syh/hdd/checkpoints/CLIP_ReID_KETI_MSMT17CLSUTERED/ViT-B-16_60.pth'
   WEIGHT: '/media/syh/hdd/checkpoints/CLIP_ReID_KETI/ViT-B-16_60.pth'
