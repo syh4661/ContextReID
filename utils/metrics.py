@@ -47,8 +47,8 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
     all_AP = []
     num_valid_q = 0.  # number of valid query
 
-    CHECK_FALSE = False
-    CHECK_TRUE = False
+    CHECK_FALSE = True
+    CHECK_TRUE = True
 
     if CHECK_FALSE:
         falser=[]

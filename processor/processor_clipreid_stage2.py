@@ -364,14 +364,16 @@ def do_inference(cfg,
                     feat = torch.tensor(0)  # model(img, cam_label=camids, view_label=target_view)
                 else:
                     feat = model(img, cam_label=camids, view_label=target_view)
-                texts = ["a man with eyeglasses"]
-                text = model.tokenizer(texts).to(device)
-                R_image = model.interpret_(img, text, device, -1, -1)
-                img_grad_list=[]
-                for i in range(img.shape[0]):
-                    # show_heatmap_on_text(texts[i], text[i], R_text[i])
-                    img_grad_list.append(show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/data/keti/syh/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]))))
-                    # plt.show()
+                img_grad_list = []
+                if GRAD_CAM:
+                    texts = ["a man with eyeglasses"]
+                    text = model.tokenizer(texts).to(device)
+                    R_image = model.interpret_(img, text, device, -1, -1)
+
+                    for i in range(img.shape[0]):
+                        # show_heatmap_on_text(texts[i], text[i], R_text[i])
+                        img_grad_list.append(show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/data/keti/syh/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]))))
+                        # plt.show()
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
                 # feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)
@@ -406,3 +408,31 @@ def do_inference(cfg,
         for r in [1, 5, 10]:
             logger.info("CMC curve, Rank-{:<3}:{:.1%}".format(r, cmc[r - 1]))
         return cmc[0], cmc[4]
+
+
+if __name__ == "__main__":
+    from config import cfg
+    import argparse
+    parser = argparse.ArgumentParser(description="ReID Baseline Training")
+    parser.add_argument(
+        "--config_file", default="configs/person/vit_clipreid.yml", help="path to config file", type=str
+    )
+    parser.add_argument("opts", help="Modify config options using the command-line", default=None,
+                        nargs=argparse.REMAINDER)
+
+    args = parser.parse_args()
+
+    if args.config_file != "":
+        cfg.merge_from_file(args.config_file)
+    cfg.merge_from_list(args.opts)
+    cfg.freeze()
+
+    output_dir = cfg.OUTPUT_DIR
+    from datasets.make_dataloader_clipreid import make_dataloader
+    train_loader, train_loader_normal, val_loader, num_query, num_classes, camera_num, view_num = make_dataloader(cfg)
+    from model.make_model_clipreid import make_model
+    model = make_model(cfg, num_class=num_classes, camera_num=camera_num, view_num=view_num)
+    do_inference(cfg,
+                 model,
+                 val_loader,
+                 num_query)
