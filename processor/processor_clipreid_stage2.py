@@ -29,11 +29,7 @@ from pytorch_grad_cam.utils.image import show_cam_on_image, \
     preprocess_image
 from pytorch_grad_cam.ablation_layer import AblationLayerVit
 
-from utils.visualization.ViT_explanation_generator import LRP
-#
 from utils.visualization.Clip_explain import interpret_keti,show_image_relevance, show_heatmap_on_text,show_image_relevance_reid
-
-from utils.visualization.ViT_explain import generate_relevance
 
 
 class EmptyContext:
@@ -354,8 +350,6 @@ def do_inference(cfg,
 
     model.eval()
 
-    if TRANS_INTPRET:
-        attribution_generator = LRP(LRPmodel)
     if GRAD_CAM:
         gradcam_methods = \
             {"gradcam": GradCAM,
@@ -368,30 +362,12 @@ def do_inference(cfg,
              "layercam": LayerCAM,
              "fullgrad": FullGrad}
 
-    # target_layers = [model.blocks[-1].norm1]
-    # torch.cat([img_feature, img_feature_proj], dim=1)
-    #     target_layers = [model.image_encoder.transformer.resblocks[9].ln_1,model.image_encoder.transformer.resblocks[10].ln_1,model.image_encoder.transformer.resblocks[11].ln_1]
-        # target_layers = [model.image_encoder.ln_post]
-        # target_layers = [model.image_encoder]
-        # target_layers = [model.image_encoder.ln_post]
-        # target_layers = [model.classifier]
-        target_layers = [model.image_encoder.transformer.resblocks[11].ln_1]
-        cam = gradcam_methods['gradcam++'](model=model,
-                                   target_layers=target_layers,
-                                   use_cuda=True,
-                                   reshape_transform=reshape_transform)
-        cam.batch_size = cfg.TEST.IMS_PER_BATCH
 
-    from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
-    text_out_list=[]
     if GRAD_CAM or TRANS_INTPRET:
         Grad_status = EmptyContext
     else:
         Grad_status = torch.no_grad
     # todo 230921 prompt output save with trainset
-
-
-
     with open('trainset_prompt_output.txt', 'w') as train_prompts:
         for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
             with Grad_status():
@@ -427,15 +403,6 @@ def do_inference(cfg,
                 # todo 230921 make msmt trainset validation
                 # feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)
                 # feat = model(img, cam_label=camids, view_label=target_view)
-
-                if TRANS_INTPRET:
-                    cat = generate_visualization(img,attribution_generator)
-                    fig, axs = plt.subplots(1, 2)
-                    axs[0].imshow(img)
-                    axs[0].axis('off')
-
-                    axs[1].imshow(cat)
-                    axs[1].axis('off')
 
                 evaluator.update((feat, pid, camid))
 
