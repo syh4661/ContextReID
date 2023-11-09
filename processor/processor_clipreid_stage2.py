@@ -15,20 +15,6 @@ import cv2
 
 import matplotlib.pyplot as plt
 
-
-from pytorch_grad_cam import GradCAM, \
-    ScoreCAM, \
-    GradCAMPlusPlus, \
-    AblationCAM, \
-    XGradCAM, \
-    EigenCAM, \
-    EigenGradCAM, \
-    LayerCAM, \
-    FullGrad
-from pytorch_grad_cam.utils.image import show_cam_on_image, \
-    preprocess_image
-from pytorch_grad_cam.ablation_layer import AblationLayerVit
-
 from utils.visualization.Clip_explain import interpret_keti,show_image_relevance, show_heatmap_on_text,show_image_relevance_reid
 
 
@@ -350,19 +336,6 @@ def do_inference(cfg,
 
     model.eval()
 
-    if GRAD_CAM:
-        gradcam_methods = \
-            {"gradcam": GradCAM,
-             "scorecam": ScoreCAM,
-             "gradcam++": GradCAMPlusPlus,
-             "ablationcam": AblationCAM,
-             "xgradcam": XGradCAM,
-             "eigencam": EigenCAM,
-             "eigengradcam": EigenGradCAM,
-             "layercam": LayerCAM,
-             "fullgrad": FullGrad}
-
-
     if GRAD_CAM or TRANS_INTPRET:
         Grad_status = EmptyContext
     else:
@@ -397,7 +370,7 @@ def do_inference(cfg,
                 img_grad_list=[]
                 for i in range(img.shape[0]):
                     # show_heatmap_on_text(texts[i], text[i], R_text[i])
-                    img_grad_list.append(show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/media/syh/ssd2/data/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]))))
+                    img_grad_list.append(show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/data/keti/syh/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]))))
                     # plt.show()
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
@@ -421,7 +394,7 @@ def do_inference(cfg,
 
                         # cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
                         save_name = imgpath[i].split('.')[0]+'_grad'+'.jpg'
-                        save_path = os.path.join('/media/syh/ssd2/data/ReID/MSMT17/query_ClipReID_output_grad',save_name)
+                        save_path = os.path.join('/data/keti/syh/ReID/MSMT17/query_ClipReID_output_grad',save_name)
                         # cv2.imwrite(save_path, grayscale_cam_)
                         grayscale_cam_.savefig(save_path)
 

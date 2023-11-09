@@ -122,9 +122,9 @@ class build_transformer(nn.Module):
 
     def interpret_(self,image, texts, device, start_layer, start_layer_text):
         batch_size = image.shape[0]
-        images = image.repeat(batch_size, 1, 1, 1)
+        #images = image.repeat(batch_size, 1, 1, 1)
 
-        logits_per_image = self.classifier(self.forward(images)[:,:self.classifier.weight.shape[1]])
+        logits_per_image = self.classifier(self.forward(image)[:,:self.classifier.weight.shape[1]])
         # logits_per_text = self.text_encoder(texts)
 
         probs = logits_per_image.softmax(dim=-1).detach().cpu().numpy()
