@@ -130,7 +130,7 @@ def eval_func(distmat, q_pids, g_pids, q_camids, g_camids, max_rank=50):
 
     assert num_valid_q > 0, "Error: all query identities do not appear in gallery"
     if CHECK_FALSE:
-        with open("utils/checks/cmc_keep.txt", "w") as file:
+        with open("utils/checks/fail_cmc_keep.txt", "w") as file:
             for row in cmc_keep:
                 # Convert each row to a string of comma-separated values and add a newline character
                 line = ",".join(map(str, row)) + "\n"
