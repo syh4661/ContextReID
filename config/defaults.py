@@ -83,6 +83,8 @@ _C.INPUT.PIXEL_STD = [0.229, 0.224, 0.225]
 # Value of padding size
 _C.INPUT.PADDING = 10
 
+_C.INPUT.PROMPT_BASE = "A photo of a X X X X person."
+
 # -----------------------------------------------------------------------------
 # Dataset
 # -----------------------------------------------------------------------------
@@ -153,6 +155,7 @@ _C.SOLVER.STAGE1.LOG_PERIOD = 100
 # contain 16 images per batch
 # _C.SOLVER.STAGE1.IMS_PER_BATCH = 64
 _C.SOLVER.STAGE1.EVAL_PERIOD = 10
+
 
 # ---------------------------------------------------------------------------- #
 # Solver

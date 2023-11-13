@@ -18,7 +18,7 @@ def do_train_stage1(cfg,
     checkpoint_period = cfg.SOLVER.STAGE1.CHECKPOINT_PERIOD
     device = "cuda"
     epochs = cfg.SOLVER.STAGE1.MAX_EPOCHS
-    log_period = cfg.SOLVER.STAGE1.LOG_PERIOD 
+    log_period = cfg.SOLVER.STAGE1.LOG_PERIOD
 
     logger = logging.getLogger("transreid.train")
     logger.info('start training')

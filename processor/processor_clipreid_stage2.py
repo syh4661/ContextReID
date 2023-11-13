@@ -201,10 +201,10 @@ def do_train_stage2(cfg,
 
             with amp.autocast(enabled=True):
                 score, feat, image_features = model(x = img, label = target, cam_label=target_cam, view_label=target_view)
-                for i in range(batch_size):
-                    # show_heatmap_on_text(texts[i], text[i], R_text[i])
-                    img_grad=show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
-                    plt.show()
+                # for i in range(batch_size):
+                #     # show_heatmap_on_text(texts[i], text[i], R_text[i])
+                #     img_grad=show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
+                #     plt.show()
                 if len(items)==5:
                     ## Todo 230926 make max pooling in solo-clustered
                     text_features_ = torch.cat((text_features, text_features_cluster), dim=0)
@@ -298,8 +298,8 @@ def do_train_stage2(cfg,
                         feat = model(img, cam_label=camids, view_label=target_view)
                         texts = ["a man with eyeglasses"]
                         text = model.tokenizer(texts).to(device)
-                        R_image = model.interpret_keti(img, text, device, -1, -1)
-                        show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
+                        # R_image = model.interpret_keti(img, text, device, -1, -1)
+                        # show_image_relevance(R_image[i], img, orig_image=Image.open(img_path))
                         evaluator.update((feat, vid, camid))
                 cmc, mAP, _, _, _, _, _ = evaluator.compute()
                 logger.info("Validation Results - Epoch: {}".format(epoch))
@@ -396,7 +396,7 @@ def do_inference(cfg,
 
                         # cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
                         save_name = imgpath[i].split('.')[0]+'_grad'+'.jpg'
-                        save_path = os.path.join('/data/keti/syh/ReID/MSMT17/query_ClipReID_output_grad',save_name)
+                        save_path = os.path.join(cfg.TEST.OUTPUT_DIR,'out_img',save_name)
                         # cv2.imwrite(save_path, grayscale_cam_)
                         grayscale_cam_.savefig(save_path)
 

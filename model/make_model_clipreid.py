@@ -111,7 +111,7 @@ class build_transformer(nn.Module):
         if cfg.DATASETS.CLUSTER:
             self.prompt_learner = PromptLearnerCluster(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
         else :
-            self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding)
+            self.prompt_learner = PromptLearner(num_classes, dataset_name, clip_model.dtype, clip_model.token_embedding,ctx_init_cfg=cfg.INPUT.PROMPT_BASE)
         self.tokenizer = clip.tokenize
         self.text_encoder = TextEncoder(clip_model)
 
@@ -333,7 +333,7 @@ def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_si
     return model
 
 class PromptLearner(nn.Module):
-    def __init__(self, num_class, dataset_name, dtype, token_embedding):
+    def __init__(self, num_class, dataset_name, dtype, token_embedding,ctx_init_cfg):
         super().__init__()
         if dataset_name == "VehicleID" or dataset_name == "veri":
             ctx_init = "A photo of a X X X X vehicle."
@@ -341,7 +341,8 @@ class PromptLearner(nn.Module):
             ctx_init = "A photo of a X X X X person."
             ctx_init_clustered = "A photo of two X X X X people."
         else:
-            ctx_init = "A photo of a X X X X person."
+            # ctx_init = "A photo of a X X X X person." #ctx_init_cfg
+            ctx_init = ctx_init_cfg  # ctx_init_cfg
 
         ctx_dim = 512
         # use given words to initialize context vectors

@@ -66,7 +66,10 @@ if __name__ == '__main__':
     train_loader_stage2, train_loader_stage1, val_loader, num_query, num_classes, camera_num, view_num = make_dataloader(cfg)
 
     model = make_model(cfg, num_class=num_classes, camera_num=camera_num, view_num = view_num)
-
+    if cfg.MODEL.PRETRAIN_PATH != '':
+        model.load_param(cfg.MODEL.PRETRAIN_PATH)
+    pretrain_epoch = int(cfg.MODEL.PRETRAIN_PATH.split('/')[-1].split('.')[0].split('_')[-1])
+    pretrain_stage = cfg.MODEL.PRETRAIN_PATH.split('/')[-1].split('.')[0].split('_')[-2]
     loss_func, center_criterion = make_loss(cfg, num_classes=num_classes)
 
     optimizer_1stage = make_optimizer_1stage(cfg, model)
@@ -83,15 +86,17 @@ if __name__ == '__main__':
             args.local_rank
         )
     else:
-        pass
-        do_train_stage1(
-            cfg,
-            model,
-            train_loader_stage1,
-            optimizer_1stage,
-            scheduler_1stage,
-            args.local_rank
-        )
+        if pretrain_epoch < int(cfg.SOLVER.STAGE1.MAX_EPOCHS):
+            do_train_stage1(
+                cfg,
+                model,
+                train_loader_stage1,
+                optimizer_1stage,
+                scheduler_1stage,
+                args.local_rank
+            )
+        else:
+            pass
 
     optimizer_2stage, optimizer_center_2stage = make_optimizer_2stage(cfg, model, center_criterion)
     scheduler_2stage = WarmupMultiStepLR(optimizer_2stage, cfg.SOLVER.STAGE2.STEPS, cfg.SOLVER.STAGE2.GAMMA, cfg.SOLVER.STAGE2.WARMUP_FACTOR,
