@@ -341,6 +341,19 @@ def do_inference(cfg,
     else:
         Grad_status = torch.no_grad
     # todo 230921 prompt output save with trainset
+    import os
+
+    # 체크하고 싶은 폴더 경로
+    if GRAD_CAM:
+        folder_path =  os.path.join(cfg.OUTPUT_DIR,'out_img')
+
+        # 폴더가 존재하지 않으면 생성
+        if not os.path.exists(folder_path):
+            os.makedirs(folder_path)
+            print(f"Folder created: {folder_path}")
+        else:
+            print(f"Folder already exists: {folder_path}")
+
     with open('trainset_prompt_output.txt', 'w') as train_prompts:
         for n_iter, (img, pid, camid, camids, target_view, imgpath) in enumerate(val_loader):
             with Grad_status():
@@ -396,7 +409,7 @@ def do_inference(cfg,
 
                         # cam_image = show_cam_on_image(rgb_img, grayscale_cam_)
                         save_name = imgpath[i].split('.')[0]+'_grad'+'.jpg'
-                        save_path = os.path.join(cfg.TEST.OUTPUT_DIR,'out_img',save_name)
+                        save_path = os.path.join(cfg.OUTPUT_DIR,'out_img',save_name)
                         # cv2.imwrite(save_path, grayscale_cam_)
                         grayscale_cam_.savefig(save_path)
 

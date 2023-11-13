@@ -64,7 +64,7 @@ SOLVER:
   
 TEST:
   EVAL: True
-  IMS_PER_BATCH: 512
+  IMS_PER_BATCH: 1024
   RE_RANKING: False
 #  WEIGHT: '/media/syh/hdd/checkpoints/CLIP_ReID_KETI_MSMT17CLSUTERED/ViT-B-16_60.pth'
 #  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_KETI/ViT-B-16_60.pth'
@@ -76,7 +76,7 @@ TEST:
 DATASETS:
 #   NAMES: ('market1501')
 #   ROOT_DIR: ('')
-# OUTPUT_DIR: ''
+# OUTPUT_DIR: ''e
 
 #   NAMES: ('dukemtmc')
 #   ROOT_DIR: ('')
