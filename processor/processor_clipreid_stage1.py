@@ -9,6 +9,8 @@ import collections
 from torch.nn import functional as F
 from loss.supcontrast import SupConLoss
 
+from tqdm import tqdm
+
 def do_train_stage1(cfg,
              model,
              train_loader_stage1,
@@ -41,7 +43,7 @@ def do_train_stage1(cfg,
     image_features = []
     labels = []
     with torch.no_grad():
-        for n_iter, (img, vid, target_cam, target_view) in enumerate(train_loader_stage1):
+        for n_iter, (img, vid, target_cam, target_view) in enumerate(tqdm(train_loader_stage1, desc="stage1, image feature extracting")):
             img = img.to(device)
             target = vid.to(device)
             with amp.autocast(enabled=True):
@@ -57,13 +59,13 @@ def do_train_stage1(cfg,
         i_ter = num_image // batch
     del labels, image_features
 
-    for epoch in range(1, epochs + 1):
+    for epoch in tqdm(range(1, epochs + 1), desc="stage1, Prompt Learning via Total Epochs"):
         loss_meter.reset()
         scheduler.step(epoch)
         model.train()
 
         iter_list = torch.randperm(num_image).to(device)
-        for i in range(i_ter+1):
+        for i in tqdm(range(i_ter + 1), desc=f"Epoch {epoch}/{epochs}"):
             optimizer.zero_grad()
             if i != i_ter:
                 b_list = iter_list[i*batch:(i+1)* batch]
@@ -140,7 +142,7 @@ def do_train_stage1_cluster(cfg,
     labels = []
     cluster_list = []
     with torch.no_grad():
-        for n_iter, (img, vid, target_cam, target_view,cluster) in enumerate(train_loader_stage1):
+        for n_iter, (img, vid, target_cam, target_view,cluster) in enumerate(tqdm(train_loader_stage1, desc="stage1, image feature extracting")):
             img = img.to(device)
             target = vid.to(device)
             clusters = cluster.to(device)
@@ -159,13 +161,13 @@ def do_train_stage1_cluster(cfg,
         i_ter = num_image // batch
     del labels, image_features
 
-    for epoch in range(1, epochs + 1):
+    for epoch in tqdm(range(1, epochs + 1), desc="stage1, Prompt Learning via Total Epochs"):
         loss_meter.reset()
         scheduler.step(epoch)
         model.train()
 
         iter_list = torch.randperm(num_image).to(device)
-        for i in range(i_ter + 1):
+        for i in tqdm(range(i_ter + 1), desc=f"Epoch {epoch}/{epochs}"):
             optimizer.zero_grad()
             if i != i_ter:
                 b_list = iter_list[i * batch:(i + 1) * batch]

@@ -68,8 +68,11 @@ if __name__ == '__main__':
     model = make_model(cfg, num_class=num_classes, camera_num=camera_num, view_num = view_num)
     if cfg.MODEL.PRETRAIN_PATH != '':
         model.load_param(cfg.MODEL.PRETRAIN_PATH)
-    pretrain_epoch = int(cfg.MODEL.PRETRAIN_PATH.split('/')[-1].split('.')[0].split('_')[-1])
-    pretrain_stage = cfg.MODEL.PRETRAIN_PATH.split('/')[-1].split('.')[0].split('_')[-2]
+        pretrain_epoch = int(cfg.MODEL.PRETRAIN_PATH.split('/')[-1].split('.')[0].split('_')[-1])
+        pretrain_stage = cfg.MODEL.PRETRAIN_PATH.split('/')[-1].split('.')[0].split('_')[-2]
+    else:
+        pretrain_epoch=-1
+        pretrain_stage = 'stage1'
     loss_func, center_criterion = make_loss(cfg, num_classes=num_classes)
 
     optimizer_1stage = make_optimizer_1stage(cfg, model)

@@ -91,6 +91,8 @@ class build_transformer(nn.Module):
         clip_model = load_clip_to_cpu(self.model_name, self.h_resolution, self.w_resolution, self.vision_stride_size,cfg.MODEL.LRP)
         clip_model.to("cuda")
 
+        self.dino_vit = clip_model.dino
+
         self.image_encoder = clip_model.visual
 
 
@@ -196,7 +198,9 @@ class build_transformer(nn.Module):
             return text_features#,text_out
 
         if get_image == True:
-            image_features_last, image_features, image_features_proj = self.image_encoder(x) 
+            #image_features_last, image_features, image_features_proj = self.image_encoder(x)
+
+            image_features_last, image_features, image_features_proj = self.dino_vit(x)
             if self.model_name == 'RN50':
                 return image_features_proj[0]
             elif self.model_name == 'ViT-B-16':
@@ -375,13 +379,14 @@ class PromptLearner(nn.Module):
         # those computed using the current class names
         self.register_buffer("token_prefix", embedding[:, :n_ctx + 1, :])  
         self.register_buffer("token_suffix", embedding[:, n_ctx + 1 + n_cls_ctx: , :])
+        # if dataset_name == 'msmt17clustered':
         self.register_buffer("token_prefix_cluster", embedding[:, :n_ctx + 1, :])
         self.register_buffer("token_suffix_cluster", embedding[:, n_ctx + 1 + n_cls_ctx:, :])
         self.num_class = num_class
         self.n_cls_ctx = n_cls_ctx
 
     def forward(self, label):
-        cls_ctx = self.cls_ctx[label]
+        cls_ctx = self.cls_ctx[label] # b, 4, 512
         b = label.shape[0]
         prefix = self.token_prefix.expand(b, -1, -1)
         suffix = self.token_suffix.expand(b, -1, -1)
@@ -393,7 +398,7 @@ class PromptLearner(nn.Module):
                 suffix,  # (n_cls, *, dim)
             ],
             dim=1,
-        ) 
+        ) # b 77 512
 
         return prompts
 

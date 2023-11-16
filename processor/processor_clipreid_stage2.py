@@ -340,10 +340,7 @@ def do_inference(cfg,
         Grad_status = EmptyContext
     else:
         Grad_status = torch.no_grad
-    # todo 230921 prompt output save with trainset
-    import os
 
-    # 체크하고 싶은 폴더 경로
     if GRAD_CAM:
         folder_path =  os.path.join(cfg.OUTPUT_DIR,'out_img')
 
@@ -387,6 +384,8 @@ def do_inference(cfg,
                         # show_heatmap_on_text(texts[i], text[i], R_text[i])
                         img_grad_list.append(show_image_relevance_reid(R_image[i], img[i], orig_image=Image.open(os.path.join("/data/keti/syh/ReID/MSMT17/test",imgpath[i][:4],imgpath[i]))))
                         # plt.show()
+                    del R_image
+                    torch.cuda.empty_cache()
                 #feat = model(img, cam_label=camids, view_label=target_view)
                 # todo 230921 make msmt trainset validation
                 # feat = torch.tensor(0)#model(img, cam_label=camids, view_label=target_view)

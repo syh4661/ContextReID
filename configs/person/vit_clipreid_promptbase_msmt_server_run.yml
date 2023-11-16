@@ -12,7 +12,7 @@ MODEL:
   # SIE_COE : 1.0
 #  LRP : 'LRP'
   LRP : ''
-  PRETRAIN_PATH : "/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/ViT-B-16_stage1_120.pth"
+#  PRETRAIN_PATH : "/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/ViT-B-16_stage1_120.pth"
 INPUT:
   SIZE_TRAIN: [256, 128]
   SIZE_TEST: [256, 128]
@@ -64,15 +64,16 @@ SOLVER:
   
 TEST:
   EVAL: True
-  IMS_PER_BATCH: 1024
+  IMS_PER_BATCH: 128
   RE_RANKING: False
 #  WEIGHT: '/media/syh/hdd/checkpoints/CLIP_ReID_KETI_MSMT17CLSUTERED/ViT-B-16_60.pth'
 #  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_KETI/ViT-B-16_60.pth'
-  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/ViT-B-16_60.pth'
-
+#  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/ViT-B-16_60.pth'
+  # 23.11.15 Clip baseline test result (imagenet pretrained)
+  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained/ViT-B-16_Clip_base.pth'
   NECK_FEAT: 'before'
   FEAT_NORM: 'yes'
-  GRADCAM : False
+  GRADCAM : True
 DATASETS:
 #   NAMES: ('market1501')
 #   ROOT_DIR: ('')
@@ -89,5 +90,6 @@ DATASETS:
   NAMES: ('msmt17')
   ROOT_DIR: ('/data/keti/syh/ReID')
 #OUTPUT_DIR: '/media/syh/hdd/checkpoints/CLIP_ReID_Clustered_Trained_Test_on_MSMT17'
-OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17'
+#OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17_debug'
+OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained'
 # CUDA_VISIBLE_DEVICES=3 python train_clipreid.py --config_file configs/person/vit_clipreid.yml
