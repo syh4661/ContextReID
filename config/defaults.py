@@ -23,9 +23,13 @@ _C.MODEL.DEVICE_ID = '0'
 _C.MODEL.NAME = 'resnet50'
 # Last stride of backbone
 _C.MODEL.LAST_STRIDE = 1
+
+_C.MODEL.VISUAL_MODEL = 'clipreid_vit'
+
 # Path to pretrained model of backbone
 _C.MODEL.PRETRAIN_PATH = ''
-
+# Path to pretrained dino path
+_C.MODEL.DINO_PRETRAIN_PATH = ''
 # Use ImageNet pretrained model to initialize backbone or use self trained model to initialize the whole model
 # Options: 'imagenet' , 'self' , 'finetune'
 _C.MODEL.PRETRAIN_CHOICE = 'imagenet'

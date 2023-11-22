@@ -8,14 +8,21 @@ MODEL:
   ID_LOSS_WEIGHT : 0.25
   TRIPLET_LOSS_WEIGHT : 1.0
   I2T_LOSS_WEIGHT : 1.0
+#  VISUAL_MODEL : 'clipreid_vit'
+   VISUAL_MODEL : 'dino_vit'
   # SIE_CAMERA: True
   # SIE_COE : 1.0
 #  LRP : 'LRP'
   LRP : ''
 #  PRETRAIN_PATH : "/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/ViT-B-16_stage1_120.pth"
 #  PRETRAIN_PATH : "/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained/ViT-B-16_stage1_120.pth"
-  DINO_PRETRAIN_PATH : ""
+#  PRETRAIN_PATH : "/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT_DINO_Pretrain_Prompt_learning_dinomsmt_ep85_dino_encoder/ViT-B-16_stage1_120.pth"
 
+#  DINO_PRETRAIN_PATH : "/data/keti/syh/exp/DINO_MSMT17_train/checkpoint_15ep.pth"
+#  DINO_PRETRAIN_PATH: "/data/keti/syh/exp/DINO_MSMT17_train/checkpoint_85ep.pth"
+
+  DINO_PRETRAIN_PATH: "/data/keti/syh/exp/DINO_MSMT17_train_reid_shape_256_112_ratio_2_1/checkpoint0020.pth"
+#  DINO_PRETRAIN_PATH: "/data/keti/syh/exp/DINO_MSMT17_train/checkpoint0080.pth"
 INPUT:
   SIZE_TRAIN: [256, 128]
   SIZE_TEST: [256, 128]
@@ -24,7 +31,7 @@ INPUT:
   PADDING: 10
   PIXEL_MEAN: [0.5, 0.5, 0.5]
   PIXEL_STD: [0.5, 0.5, 0.5]
-  PROMPT_BASE : "A photo of a X X X X person for Person Re-identification task." # 23.11.13 prompt test for Task-aware
+  PROMPT_BASE : "A photo of a X X X X person." # 23.11.13 prompt test for Task-aware
 
 DATALOADER:
   SAMPLER: 'softmax_triplet'
@@ -45,7 +52,7 @@ SOLVER:
     CHECKPOINT_PERIOD: 120
     LOG_PERIOD: 50
     WARMUP_EPOCHS: 5
-  
+
   STAGE2:
     IMS_PER_BATCH: 64
     OPTIMIZER_NAME: "Adam"
@@ -61,20 +68,21 @@ SOLVER:
     LOG_PERIOD: 50
     EVAL_PERIOD: 60
     BIAS_LR_FACTOR: 2
-    
+
     STEPS: [30, 50]
     GAMMA: 0.1
-  
+
 TEST:
   EVAL: True
-  IMS_PER_BATCH: 128
+  IMS_PER_BATCH: 64
   RE_RANKING: False
 #  WEIGHT: '/media/syh/hdd/checkpoints/CLIP_ReID_KETI_MSMT17CLSUTERED/ViT-B-16_60.pth'
 #  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_KETI/ViT-B-16_60.pth'
 #  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/ViT-B-16_60.pth'
   # 23.11.15 Clip baseline test result (imagenet pretrained)
 #  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained/ViT-B-16_Clip_base.pth'
-  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained/ViT-B-16_60_DINO_self_promptlearning.pth'
+#  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained/ViT-B-16_60_DINO_self_promptlearning.pth'
+  WEIGHT: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT_DINO_Pretrain_Prompt_learning_dinomsmt_ep80/ViT-B-16_60.pth'
   NECK_FEAT: 'before'
   FEAT_NORM: 'yes'
   GRADCAM : False
@@ -96,5 +104,7 @@ DATASETS:
 #OUTPUT_DIR: '/media/syh/hdd/checkpoints/CLIP_ReID_Clustered_Trained_Test_on_MSMT17'
 #OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17_debug'
 #OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained'
-OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT_DINO_Pretrain_Prompt_learning'
+#OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT_DINO_Pretrain_Prompt_learning_dinomsmt_ep80'
+#OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT_DINO_Pretrain_Prompt_learning_dinomsmt_ep85_dino_encoder'
+OUTPUT_DIR: '/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT_DINO_Pretrain_Prompt_learning_dinomsmt_ep20_dino_encoder_ratio'
 # CUDA_VISIBLE_DEVICES=3 python train_clipreid.py --config_file configs/person/vit_clipreid.yml

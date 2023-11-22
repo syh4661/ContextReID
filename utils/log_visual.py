@@ -3,14 +3,14 @@ import time
 from torch.utils.tensorboard import SummaryWriter
 
 # TensorBoard writer 초기화
-writer = SummaryWriter('/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/runs/log_analysis')
+writer = SummaryWriter('/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained/runs/log_analysis')
 
 # 마지막으로 읽은 라인의 번호를 추적
 last_line_read = 0
 
 try:
     while True:
-        with open('/data/keti/syh/checkpoints/CLIP_ReID_taskawarePromptBase_on_MSMT17/train_log.txt', 'r') as file:
+        with open('/data/keti/syh/checkpoints/CLIP_ReID_on_MSMT17_Test_GradCAM_zero_shot_pretrained/train_log.txt', 'r') as file:
             # 파일의 시작으로 이동
             file.seek(0)
 

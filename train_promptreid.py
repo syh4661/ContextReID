@@ -49,7 +49,7 @@ if __name__ == '__main__':
     if output_dir and not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    logger = setup_logger("transreid", output_dir, if_train=True)
+    logger = setup_logger("contextreid", output_dir, if_train=True)
     logger.info("Saving model in the path :{}".format(cfg.OUTPUT_DIR))
     logger.info(args)
 
@@ -98,6 +98,7 @@ if __name__ == '__main__':
                 scheduler_1stage,
                 args.local_rank
             )
+            pass
         else:
             pass
 

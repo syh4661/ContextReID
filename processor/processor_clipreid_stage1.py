@@ -22,7 +22,7 @@ def do_train_stage1(cfg,
     epochs = cfg.SOLVER.STAGE1.MAX_EPOCHS
     log_period = cfg.SOLVER.STAGE1.LOG_PERIOD
 
-    logger = logging.getLogger("transreid.train")
+    logger = logging.getLogger("contextreid.train")
     logger.info('start training')
     _LOCAL_PROCESS_GROUP = None
     if device:
@@ -57,6 +57,7 @@ def do_train_stage1(cfg,
         batch = cfg.SOLVER.STAGE1.IMS_PER_BATCH
         num_image = labels_list.shape[0]
         i_ter = num_image // batch
+
     del labels, image_features
 
     for epoch in tqdm(range(1, epochs + 1), desc="stage1, Prompt Learning via Total Epochs"):
@@ -65,43 +66,46 @@ def do_train_stage1(cfg,
         model.train()
 
         iter_list = torch.randperm(num_image).to(device)
-        for i in tqdm(range(i_ter + 1), desc=f"Epoch {epoch}/{epochs}"):
-            optimizer.zero_grad()
-            if i != i_ter:
-                b_list = iter_list[i*batch:(i+1)* batch]
-            else:
-                b_list = iter_list[i*batch:num_image]
-            
-            target = labels_list[b_list]
-            image_features = image_features_list[b_list]
-            with amp.autocast(enabled=True):
-                text_features = model(label = target, get_text = True)
-            loss_i2t = xent(image_features, text_features, target, target)
-            loss_t2i = xent(text_features, image_features, target, target)
+        with tqdm(range(i_ter + 1), desc=f"Epoch {epoch}/{epochs}", leave=False) as pbar:
+            for i in pbar:
+                optimizer.zero_grad()
+                if i != i_ter:
+                    b_list = iter_list[i*batch:(i+1)* batch]
+                else:
+                    b_list = iter_list[i*batch:num_image]
 
-            loss = loss_i2t + loss_t2i
+                target = labels_list[b_list]
+                image_features = image_features_list[b_list]
+                with amp.autocast(enabled=True):
+                    text_features = model(label = target, get_text = True)
+                loss_i2t = xent(image_features, text_features, target, target)
+                loss_t2i = xent(text_features, image_features, target, target)
 
-            scaler.scale(loss).backward()
+                loss = loss_i2t + loss_t2i
 
-            scaler.step(optimizer)
-            scaler.update()
+                scaler.scale(loss).backward()
 
-            loss_meter.update(loss.item(), img.shape[0])
+                scaler.step(optimizer)
+                scaler.update()
 
-            torch.cuda.synchronize()
-            if (i + 1) % log_period == 0:
-                logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Base Lr: {:.2e}"
-                            .format(epoch, (i + 1), len(train_loader_stage1),
-                                    loss_meter.avg, scheduler._get_lr(epoch)[0]))
+                loss_meter.update(loss.item(), img.shape[0])
 
-        if epoch % checkpoint_period == 0:
-            if cfg.MODEL.DIST_TRAIN:
-                if dist.get_rank() == 0:
+                torch.cuda.synchronize()
+                if (i + 1) % log_period == 0:
+                    logger.info("Epoch[{}] Iteration[{}/{}] Loss: {:.3f}, Base Lr: {:.2e}"
+                                .format(epoch, (i + 1), len(train_loader_stage1),
+                                        loss_meter.avg, scheduler._get_lr(epoch)[0]))
+                    # tqdm.write(
+                    #     f"Epoch[{epoch}] Iteration[{i + 1}/{len(train_loader_stage1)}] Loss: {loss_meter.avg:.3f}, Base Lr: {scheduler._get_lr(epoch)[0]:.2e}")
+
+            if epoch % checkpoint_period == 0:
+                if cfg.MODEL.DIST_TRAIN:
+                    if dist.get_rank() == 0:
+                        torch.save(model.state_dict(),
+                                   os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_stage1_{}.pth'.format(epoch)))
+                else:
                     torch.save(model.state_dict(),
                                os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_stage1_{}.pth'.format(epoch)))
-            else:
-                torch.save(model.state_dict(),
-                           os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_stage1_{}.pth'.format(epoch)))
 
     all_end_time = time.monotonic()
     total_time = timedelta(seconds=all_end_time - all_start_time)

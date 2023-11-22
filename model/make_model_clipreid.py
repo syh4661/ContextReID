@@ -88,12 +88,16 @@ class build_transformer(nn.Module):
         self.w_resolution = int((cfg.INPUT.SIZE_TRAIN[1]-16)//cfg.MODEL.STRIDE_SIZE[1] + 1)
         self.vision_stride_size = cfg.MODEL.STRIDE_SIZE[0]
         # Load Clip
-        clip_model = load_clip_to_cpu(self.model_name, self.h_resolution, self.w_resolution, self.vision_stride_size,cfg.MODEL.LRP)
+        clip_model = load_clip_to_cpu(self.model_name, self.h_resolution, self.w_resolution, self.vision_stride_size,cfg)
+
         clip_model.to("cuda")
 
-        self.dino_vit = clip_model.dino
-
-        self.image_encoder = clip_model.visual
+        if cfg.MODEL.VISUAL_MODEL == 'dino_vit':
+            self.image_encoder = clip_model.dino
+        elif cfg.MODEL.VISUAL_MODEL == 'clipreid_vit':
+            self.image_encoder = clip_model.visual
+        else:
+            raise ValueError("The visual model is not predefined in the project.")
 
 
         if cfg.MODEL.SIE_CAMERA and cfg.MODEL.SIE_VIEW:
@@ -122,6 +126,9 @@ class build_transformer(nn.Module):
         self.unembedder = clip.unembedding
         self.untokenizer = clip.untokenize
 
+    # The code for interpretation is adapted from the approach described in the paper available at
+    # https://github.com/hila-chefer/Transformer-MM-Explainability.
+    # paper : https://arxiv.org/abs/2103.15679
     def interpret_(self,image, texts, device, start_layer, start_layer_text):
         batch_size = image.shape[0]
         #images = image.repeat(batch_size, 1, 1, 1)
@@ -198,9 +205,7 @@ class build_transformer(nn.Module):
             return text_features#,text_out
 
         if get_image == True:
-            #image_features_last, image_features, image_features_proj = self.image_encoder(x)
-
-            image_features_last, image_features, image_features_proj = self.dino_vit(x)
+            image_features_last, image_features, image_features_proj = self.image_encoder(x)
             if self.model_name == 'RN50':
                 return image_features_proj[0]
             elif self.model_name == 'ViT-B-16':
@@ -320,7 +325,7 @@ def make_model(cfg, num_class, camera_num, view_num):
 
 
 from .clip import clip
-def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_size,model_configs):
+def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_size,configs):
     url = clip._MODELS[backbone_name]
     model_path = clip._download(url)
 
@@ -332,7 +337,7 @@ def load_clip_to_cpu(backbone_name, h_resolution, w_resolution, vision_stride_si
     except RuntimeError:
         state_dict = torch.load(model_path, map_location="cpu")
 
-    model = clip.build_model(state_dict or model.state_dict(), h_resolution, w_resolution, vision_stride_size,model_configs)
+    model = clip.build_model(state_dict or model.state_dict(), h_resolution, w_resolution, vision_stride_size,configs)
 
     return model
 

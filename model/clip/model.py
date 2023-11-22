@@ -18,6 +18,26 @@ from functools import partial
 class PatchEmbed(nn.Module):
     """ Image to Patch Embedding
     """
+    def __init__(self, img_size=[224], patch_size=16, in_chans=3, embed_dim=768):
+        super().__init__()
+        if len(img_size) == 1:
+            num_patches = (img_size[0] // patch_size) * (img_size[0] // patch_size)
+        elif len(img_size)==2: # reid case
+            num_patches = (img_size[0] // patch_size) * (img_size[1] // patch_size)
+        self.img_size = img_size
+        self.patch_size = patch_size
+        self.num_patches = num_patches
+
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
+
+    def forward(self, x):
+        B, C, H, W = x.shape
+        x = self.proj(x).flatten(2).transpose(1, 2)
+        return x
+
+class PatchEmbedReid(nn.Module):
+    """ Image to Patch Embedding
+    """
     def __init__(self, img_size=224, patch_size=16, in_chans=3, embed_dim=768):
         super().__init__()
         num_patches = (img_size // patch_size) * (img_size // patch_size)
@@ -25,13 +45,12 @@ class PatchEmbed(nn.Module):
         self.patch_size = patch_size
         self.num_patches = num_patches
 
-        self.proj_ = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
+        self.proj = nn.Conv2d(in_chans, embed_dim, kernel_size=patch_size, stride=patch_size)
 
     def forward(self, x):
         B, C, H, W = x.shape
-        x = self.proj_(x).flatten(2).transpose(1, 2)
+        x = self.proj(x).flatten(2).transpose(1, 2)
         return x
-
 # Dino Drop
 class DropPath(nn.Module):
     """Drop paths (Stochastic Depth) per sample  (when applied in main path of residual blocks).
@@ -76,7 +95,7 @@ class Attention(nn.Module):
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj_ = nn.Linear(dim, dim)
+        self.proj = nn.Linear(dim, dim)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x):
@@ -89,7 +108,7 @@ class Attention(nn.Module):
         attn = self.attn_drop(attn)
 
         x = (attn @ v).transpose(1, 2).reshape(B, N, C)
-        x = self.proj_(x)
+        x = self.proj(x)
         x = self.proj_drop(x)
         return x, attn
 
@@ -366,9 +385,9 @@ class VisionTransformerDINO(nn.Module):
                  drop_path_rate=0., norm_layer=nn.LayerNorm, **kwargs):
         super().__init__()
         self.num_features = self.embed_dim = embed_dim
-
+        self.img_size = img_size
         self.patch_embed = PatchEmbed(
-            img_size=img_size[0], patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
+            img_size=img_size, patch_size=patch_size, in_chans=in_chans, embed_dim=embed_dim)
         num_patches = self.patch_embed.num_patches
 
         self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
@@ -404,10 +423,23 @@ class VisionTransformerDINO(nn.Module):
     def interpolate_pos_encoding(self, x, w, h):
         npatch = x.shape[1] - 1
         N = self.pos_embed.shape[1] - 1
+        if len(self.img_size)==1:
+            original_num_patches_vertically = math.sqrt(N)
+            original_num_patches_horizontally = math.sqrt(N)
+
+
+        elif len(self.img_size)==2:
+            ratio = self.img_size[0]//self.img_size[1]
+            original_num_patches_vertically = int(ratio*math.sqrt(N//ratio))
+            original_num_patches_horizontally= int(math.sqrt(N//ratio))
         if npatch == N and w == h:
             return self.pos_embed
         class_pos_embed = self.pos_embed[:, 0]
         patch_pos_embed = self.pos_embed[:, 1:]
+        # 예상되는 패치의 개수 계산
+        num_patches_vertically = h // self.patch_embed.patch_size
+        num_patches_horizontally = w // self.patch_embed.patch_size
+
         dim = x.shape[-1]
         w0 = w // self.patch_embed.patch_size
         h0 = h // self.patch_embed.patch_size
@@ -415,16 +447,18 @@ class VisionTransformerDINO(nn.Module):
         # see discussion at https://github.com/facebookresearch/dino/issues/8
         w0, h0 = w0 + 0.1, h0 + 0.1
         patch_pos_embed = nn.functional.interpolate(
-            patch_pos_embed.reshape(1, int(math.sqrt(N)), int(math.sqrt(N)), dim).permute(0, 3, 1, 2),
-            scale_factor=(w0 / math.sqrt(N), h0 / math.sqrt(N)),
+            patch_pos_embed.reshape(1, original_num_patches_vertically, original_num_patches_horizontally, dim).permute(0, 3, 1, 2),
+            scale_factor=(num_patches_horizontally / original_num_patches_horizontally, num_patches_vertically / original_num_patches_vertically),
             mode='bicubic',
         )
-        assert int(w0) == patch_pos_embed.shape[-2] and int(h0) == patch_pos_embed.shape[-1]
+        assert patch_pos_embed.shape[-2] == num_patches_vertically and patch_pos_embed.shape[
+            -1] == num_patches_horizontally
         patch_pos_embed = patch_pos_embed.permute(0, 2, 3, 1).view(1, -1, dim)
         return torch.cat((class_pos_embed.unsqueeze(0), patch_pos_embed), dim=1)
 
     def prepare_tokens(self, x):
-        B, nc, w, h = x.shape
+        # B, nc, w, h = x.shape
+        B, nc, h, w = x.shape
         x = self.patch_embed(x)  # patch linear embedding
 
         # add the [CLS] token to the embed patch tokens
@@ -443,22 +477,20 @@ class VisionTransformerDINO(nn.Module):
         x = self.norm(x)
         return x[:, 0]
 
-    def forward(self, x):
+    def forward(self, x: torch.Tensor, cv_emb = None):
         x = self.prepare_tokens(x)
         x11=x
         for blk in self.blocks[:11]:
             x11 = blk(x11)
         x12 = self.blocks[11](x11)
-        for blk in self.blocks:
-            x = blk(x)
-        x = self.norm(x)
         x12 = self.norm(x12)
 
         if self.proj is not None:
             xproj = x12 @ self.proj
 
 
-        return x11[:, 0], x12[:, 0], xproj
+        # return x11[:, 0], x12[:, 0], xproj
+        return x11, x12, xproj
     def get_last_selfattention(self, x):
         x = self.prepare_tokens(x)
         for i, blk in enumerate(self.blocks):
@@ -677,12 +709,12 @@ class ContextCLIP(CLIP):
     def __init__(self, embed_dim: int, image_resolution: int, vision_layers: Union[Tuple[int, int, int, int], int],
                  vision_width: int, vision_patch_size: int, vision_stride_size: int, context_length: int,
                  vocab_size: int, transformer_width: int, transformer_heads: int, transformer_layers: int,
-                 h_resolution: int, w_resolution: int):
+                 h_resolution: int, w_resolution: int,configs):
         super().__init__(embed_dim, image_resolution, vision_layers, vision_width, vision_patch_size,
                          vision_stride_size, context_length, vocab_size, transformer_width, transformer_heads,
                          transformer_layers, h_resolution, w_resolution)
-        self.dino = vit_base(patch_size=16, num_classes=0)
-        utils_dino.load_pretrained_weights(self.dino, '/data/keti/syh/exp/DINO_MSMT17_train/checkpoint_12ep.pth', 'teacher', 'vit_base', 16)
+        self.dino = vit_base(patch_size=16, num_classes=0,img_size=[h_resolution*vision_patch_size,w_resolution*vision_patch_size])
+        utils_dino.load_pretrained_weights(self.dino, configs.MODEL.DINO_PRETRAIN_PATH, 'teacher', 'vit_base', 16)
         pass
     def forward(self, image, text):
         return super().forward(image, text)
@@ -710,12 +742,17 @@ def convert_weights(model: nn.Module):
             if hasattr(l, name):
                 attr = getattr(l, name)
                 if attr is not None:
-                    attr.data = attr.data.float()
+                    if isinstance(attr,(nn.Conv1d, nn.Conv2d, nn.Linear)):
+                        attr.weight.data = attr.weight.data.float()
+                        if attr.bias is not None:
+                            attr.bias.data = attr.bias.data.float()
+                    else:
+                        attr.data = attr.data.float()
 
     model.apply(_convert_weights_to_fp16)
 
 
-def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_stride_size: int,model_configs:str = ''):
+def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_stride_size: int,configs=''):
     vit = "visual.proj" in state_dict
 
     if vit:
@@ -750,7 +787,7 @@ def build_model(state_dict: dict, h_resolution: int, w_resolution: int, vision_s
         embed_dim,
         image_resolution, vision_layers, vision_width, vision_patch_size, vision_stride_size,
         context_length, vocab_size, transformer_width, transformer_heads, transformer_layers,
-        h_resolution, w_resolution
+        h_resolution, w_resolution,configs
     )
     if vit:
         state_dict["visual.positional_embedding"] = resize_pos_embed(state_dict["visual.positional_embedding"],

@@ -13,6 +13,8 @@ from PIL import Image, ImageFile
 import numpy as np
 import cv2
 
+from tqdm import tqdm
+
 import matplotlib.pyplot as plt
 
 from utils.visualization.Clip_explain import interpret_keti,show_image_relevance, show_heatmap_on_text,show_image_relevance_reid
@@ -114,7 +116,7 @@ def do_train_stage2(cfg,
     device = "cuda"
     epochs = cfg.SOLVER.STAGE2.MAX_EPOCHS
 
-    logger = logging.getLogger("transreid.train")
+    logger = logging.getLogger("contextreid.train")
     logger.info('start training')
     _LOCAL_PROCESS_GROUP = None
     if device:
@@ -171,7 +173,7 @@ def do_train_stage2(cfg,
                     text_feature = model(label = l_list, get_text = True)
                 text_features.append(text_feature.cpu())
             text_features = torch.cat(text_features, 0).cuda()
-    for epoch in range(1, epochs + 1):
+    for epoch in tqdm(range(1, epochs + 1), desc="stage2, Image Encoder Learning"):
         start_time = time.time()
         loss_meter.reset()
         acc_meter.reset()
@@ -180,6 +182,7 @@ def do_train_stage2(cfg,
         scheduler.step()
 
         model.train()
+
         for n_iter, items in enumerate(train_loader_stage2):
             if len(items)==5:
                 img, vid, target_cam, target_view,clusters = items
@@ -243,7 +246,9 @@ def do_train_stage2(cfg,
                                     loss_meter.avg, acc_meter.avg, scheduler.get_lr()[0]))
 
         end_time = time.time()
-        time_per_batch = (end_time - start_time) / (n_iter + 1)
+        time_per_batch = (end_time - start_time) / (2 + 1)
+
+        # time_per_batch = (end_time - start_time) / (n_iter + 1)
         if cfg.MODEL.DIST_TRAIN:
             pass
         else:
@@ -260,9 +265,15 @@ def do_train_stage2(cfg,
                            os.path.join(cfg.OUTPUT_DIR, cfg.MODEL.NAME + '_{}.pth'.format(epoch)))
 
         if epoch % eval_period == 0:
+            GRAD_CAM = cfg.TEST.GRADCAM
+            if GRAD_CAM:
+                Grad_status = EmptyContext
+            else:
+                Grad_status = torch.no_grad
             if cfg.MODEL.DIST_TRAIN:
                 if dist.get_rank() == 0:
                     model.eval()
+                    model.dino_vit.to('cpu')
                     for n_iter, (img, vid, camid, camids, target_view, _) in enumerate(val_loader):
                         with torch.no_grad():
                             img = img.to(device)
@@ -285,7 +296,7 @@ def do_train_stage2(cfg,
             else:
                 model.eval()
                 for n_iter, (img, vid, camid, camids, target_view, _) in enumerate(val_loader):
-                    with EmptyContext():
+                    with Grad_status():
                         img = img.to(device)
                         if cfg.MODEL.SIE_CAMERA:
                             camids = camids.to(device)
@@ -322,7 +333,7 @@ def do_inference(cfg,
     TRANS_INTPRET=False
 
     device = "cuda"
-    logger = logging.getLogger("transreid.test")
+    logger = logging.getLogger("contextreid.test")
     logger.info("Enter inferencing")
 
     evaluator = R1_mAP_eval(num_query, max_rank=50, feat_norm=cfg.TEST.FEAT_NORM)
@@ -344,7 +355,7 @@ def do_inference(cfg,
     if GRAD_CAM:
         folder_path =  os.path.join(cfg.OUTPUT_DIR,'out_img')
 
-        # 폴더가 존재하지 않으면 생성
+
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
             print(f"Folder created: {folder_path}")

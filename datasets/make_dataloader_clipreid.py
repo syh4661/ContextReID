@@ -62,7 +62,12 @@ def make_dataloader(cfg):
             RandomErasing(probability=cfg.INPUT.RE_PROB, mode='pixel', max_count=1, device='cpu'),
             # RandomErasing(probability=cfg.INPUT.RE_PROB, mean=cfg.INPUT.PIXEL_MEAN)
         ])
-
+    # self.global_transfo1 = transforms.Compose([
+    #     transforms.RandomResizedCrop(shape, scale=global_crops_scale, interpolation=Image.BICUBIC),
+    #     flip_and_color_jitter,
+    #     utils.GaussianBlur(1.0),
+    #     normalize,
+    # ])
     val_transforms = T.Compose([
         T.Resize(cfg.INPUT.SIZE_TEST),
         T.ToTensor(),

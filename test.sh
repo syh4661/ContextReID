@@ -23,4 +23,9 @@
 #python test_clipreid.py --config_file configs/person/vit_clipreid_msmt.yml MODEL.DIST_TRAIN False MODEL.DEVICE_ID "('0')"
 
 # 231107 Test for GradCAM ClipReID
-python test_clipreid.py --config_file configs/person/vit_clipreid_msmt.yml MODEL.DIST_TRAIN False MODEL.DEVICE_ID "('0')"
+#python test_clipreid.py --config_file configs/person/vit_clipreid_msmt.yml MODEL.DIST_TRAIN False MODEL.DEVICE_ID "('0')"
+
+# 231117 test with msmt, imkaagenet pretrained model
+
+python test_promptreid.py --config_file configs/person/vit_clipreid_promptbase_msmt_server_run_dino_imagenet.yml MODEL.DIST_TRAIN False
+python test_promptreid.py --config_file configs/person/vit_clipreid_promptbase_msmt_server_run_dino_msmt.yml MODEL.DIST_TRAIN False
