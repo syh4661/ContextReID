@@ -146,21 +146,27 @@ class build_transformer(nn.Module):
 
         self.image_encoder.zero_grad()
         self.text_encoder.zero_grad()
-
-        image_attn_blocks = list(dict(self.image_encoder.transformer.resblocks.named_children()).values())
-
+        if 'DINO' in str(type(self.image_encoder)):
+            image_attn_blocks = list(dict(self.image_encoder.blocks.named_children()).values())
+            num_tokens = image_attn_blocks[0].attn.shape[-1]
+        else:
+            image_attn_blocks = list(dict(self.image_encoder.transformer.resblocks.named_children()).values())
+            num_tokens = image_attn_blocks[0].attn_probs.shape[-1]
         if start_layer == -1:
             # calculate index of last layer
             start_layer = len(image_attn_blocks) - 1
 
-        num_tokens = image_attn_blocks[0].attn_probs.shape[-1]
         R = torch.eye(num_tokens, num_tokens, dtype=image_attn_blocks[0].attn_probs.dtype).to(device)
         R = R.unsqueeze(0).expand(batch_size, num_tokens, num_tokens)
         for i, blk in enumerate(image_attn_blocks):
             if i < start_layer:
                 continue
-            grad = torch.autograd.grad(one_hot, [blk.attn_probs], retain_graph=True)[0].detach()
-            cam = blk.attn_probs.detach()
+            if 'DINO' in str(type(self.image_encoder)):
+                grad = torch.autograd.grad(one_hot, [blk.attn], retain_graph=True)[0].detach()
+                qcam = blk.attn.detach()
+            else:
+                grad = torch.autograd.grad(one_hot, [blk.attn_probs], retain_graph=True)[0].detach()
+                qcam = blk.attn_probs.detach()
             cam = cam.reshape(-1, cam.shape[-1], cam.shape[-1])
             grad = grad.reshape(-1, grad.shape[-1], grad.shape[-1])
             cam = grad * cam
@@ -309,6 +315,11 @@ class build_transformer(nn.Module):
     def load_param(self, trained_path):
         param_dict = torch.load(trained_path)
         for i in param_dict:
+            # dino model has student teacher naming
+            if 'student' in i:
+                continue
+            if 'dino_vit' in i:
+                i=i.replace('dino_vit','image_encoder') # edit dino_vit to image_encoder
             self.state_dict()[i.replace('module.', '')].copy_(param_dict[i])
         print('Loading pretrained model from {}'.format(trained_path))
 

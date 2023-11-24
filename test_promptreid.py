@@ -42,8 +42,8 @@ if __name__ == "__main__":
     if cfg.DATASETS.NAMES=="muf_keti":
         num_classes=1041
     model = make_model(cfg, num_class=num_classes, camera_num=camera_num, view_num = view_num)
-    model.load_param(cfg.TEST.WEIGHT)
-
+    if cfg.TEST.WEIGHT != '':
+        model.load_param(cfg.TEST.WEIGHT)
     if cfg.DATASETS.NAMES == 'VehicleID':
         for trial in range(10):
             train_loader, train_loader_normal, val_loader, num_query, num_classes, camera_num, view_num = make_dataloader(cfg)
