@@ -354,8 +354,6 @@ def do_inference(cfg,
 
     if GRAD_CAM:
         folder_path =  os.path.join(cfg.OUTPUT_DIR,'out_img')
-
-
         if not os.path.exists(folder_path):
             os.makedirs(folder_path)
             print(f"Folder created: {folder_path}")
